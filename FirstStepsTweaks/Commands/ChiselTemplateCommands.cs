@@ -76,7 +76,7 @@ namespace FirstStepsTweaks.Commands
                 TreeAttribute stateTree = new TreeAttribute();
                 blockEntity.ToTreeAttributes(stateTree);
 
-                string blockCode = block.Code?.ToShortString() ?? string.Empty;
+                string blockCode = block.Code?.ToString() ?? string.Empty;
                 string encodedState = EncodeTreeAttribute(stateTree);
 
                 string templatesDir = api.GetOrCreateDataPath("ChiselTemplates");
