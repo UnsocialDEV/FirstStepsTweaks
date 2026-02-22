@@ -38,7 +38,6 @@ namespace FirstStepsTweaks
             TpaCommands.Register(api);
             UtilityCommands.Register(api);
             CorpseAdminCommands.Register(api, corpseService);
-            ChiselTemplateCommands.Register(api);
         }
     }
 }
