@@ -1,6 +1,7 @@
 ﻿using System;
 using System.IO;
 using System.Text;
+using Newtonsoft.Json.Linq;
 using Vintagestory.API.Common;
 using Vintagestory.API.Config;
 using Vintagestory.API.Datastructures;
@@ -21,6 +22,11 @@ namespace FirstStepsTweaks.Commands
                     .WithDescription("Capture the chiseled block you are looking at to a named template")
                     .WithArgs(api.ChatCommands.Parsers.Word("templateName"))
                     .HandleWith(args => CaptureTemplate(api, args))
+                .EndSubCommand()
+                .BeginSubCommand("load")
+                    .WithDescription("Load a saved chiseled block template and place it where you are standing")
+                    .WithArgs(api.ChatCommands.Parsers.Word("templateName"))
+                    .HandleWith(args => LoadTemplate(api, args))
                 .EndSubCommand();
         }
 
@@ -70,7 +76,13 @@ namespace FirstStepsTweaks.Commands
                 TreeAttribute stateTree = new TreeAttribute();
                 blockEntity.ToTreeAttributes(stateTree);
 
-                string json = stateTree.ToJsonToken()?.ToString() ?? "{}";
+                JToken serialized = new JObject
+                {
+                    ["blockCode"] = block.Code?.ToShortString() ?? string.Empty,
+                    ["state"] = stateTree.ToJsonToken() ?? new JObject()
+                };
+
+                string json = serialized.ToString();
 
                 string templatesDir = api.GetOrCreateDataPath("ChiselTemplates");
                 Directory.CreateDirectory(templatesDir);
@@ -85,6 +97,77 @@ namespace FirstStepsTweaks.Commands
             catch (Exception ex)
             {
                 string errorMessage = $"Failed to capture chisel template '{sanitizedName}' at {pos.X} {pos.Y} {pos.Z}.";
+                caller.SendMessage(GlobalConstants.InfoLogChatGroup, errorMessage, EnumChatType.CommandError);
+                api.Logger.Error($"[FirstStepsTweaks] {errorMessage} Error: {ex}");
+            }
+
+            return TextCommandResult.Success();
+        }
+
+        private static TextCommandResult LoadTemplate(ICoreServerAPI api, TextCommandCallingArgs args)
+        {
+            IServerPlayer caller = (IServerPlayer)args.Caller.Player;
+
+            string templateName = (string)args[0];
+            string sanitizedName = SanitizeTemplateName(templateName);
+
+            if (string.IsNullOrWhiteSpace(sanitizedName))
+            {
+                caller.SendMessage(GlobalConstants.InfoLogChatGroup, "Invalid template name.", EnumChatType.CommandError);
+                return TextCommandResult.Success();
+            }
+
+            string templatesDir = api.GetOrCreateDataPath("ChiselTemplates");
+            string filePath = Path.Combine(templatesDir, sanitizedName + ".json");
+
+            if (!File.Exists(filePath))
+            {
+                caller.SendMessage(GlobalConstants.InfoLogChatGroup, $"Template '{sanitizedName}' not found.", EnumChatType.CommandError);
+                return TextCommandResult.Success();
+            }
+
+            try
+            {
+                string rawJson = File.ReadAllText(filePath, Encoding.UTF8);
+                JToken rootToken = JToken.Parse(rawJson);
+
+                JToken stateToken = rootToken["state"] ?? rootToken;
+                string blockCode = rootToken["blockCode"]?.Value<string>();
+                if (string.IsNullOrWhiteSpace(blockCode))
+                {
+                    blockCode = "game:chiseledblock";
+                }
+
+                Block blockToPlace = api.World.GetBlock(new AssetLocation(blockCode));
+                if (blockToPlace == null || blockToPlace.Id == 0)
+                {
+                    caller.SendMessage(GlobalConstants.InfoLogChatGroup, $"Unable to resolve block '{blockCode}' in template.", EnumChatType.CommandError);
+                    return TextCommandResult.Success();
+                }
+
+                BlockPos placePos = caller.Entity.Pos.AsBlockPos;
+                api.World.BlockAccessor.SetBlock(blockToPlace.Id, placePos);
+
+                BlockEntity placedEntity = api.World.BlockAccessor.GetBlockEntity(placePos);
+                if (placedEntity == null)
+                {
+                    caller.SendMessage(GlobalConstants.InfoLogChatGroup, "Placed block does not have a BlockEntity; template cannot be applied.", EnumChatType.CommandError);
+                    return TextCommandResult.Success();
+                }
+
+                TreeAttribute stateTree = new TreeAttribute();
+                stateTree.FromJsonToken(stateToken);
+
+                placedEntity.FromTreeAttributes(stateTree, api.World);
+                placedEntity.MarkDirty(true);
+
+                string successMessage = $"Loaded chiseled template '{sanitizedName}' at {placePos.X} {placePos.Y} {placePos.Z}.";
+                caller.SendMessage(GlobalConstants.InfoLogChatGroup, successMessage, EnumChatType.CommandSuccess);
+                api.Logger.Notification($"[FirstStepsTweaks] {successMessage} Source: {filePath}");
+            }
+            catch (Exception ex)
+            {
+                string errorMessage = $"Failed to load chisel template '{sanitizedName}'.";
                 caller.SendMessage(GlobalConstants.InfoLogChatGroup, errorMessage, EnumChatType.CommandError);
                 api.Logger.Error($"[FirstStepsTweaks] {errorMessage} Error: {ex}");
             }
