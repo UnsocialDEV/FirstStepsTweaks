@@ -20,30 +20,22 @@ namespace FirstStepsTweaks.Commands
                     .HandleWith(args => ListActiveGraves(args, corpseService))
                 .EndSubCommand()
                 .BeginSubCommand("remove")
-                    .WithDescription("Remove a grave at x y z")
-                    .WithArgs(
-                        api.ChatCommands.Parsers.Int("x"),
-                        api.ChatCommands.Parsers.Int("y"),
-                        api.ChatCommands.Parsers.Int("z")
-                    )
+                    .WithDescription("Remove a grave by ID")
+                    .WithArgs(api.ChatCommands.Parsers.Int("graveId"))
                     .HandleWith(args => RemoveGrave(args, corpseService))
                 .EndSubCommand()
                 .BeginSubCommand("duplicate")
-                    .WithDescription("Duplicate grave items to a player")
+                    .WithDescription("Duplicate grave items by ID to a player")
                     .WithArgs(
-                        api.ChatCommands.Parsers.Int("x"),
-                        api.ChatCommands.Parsers.Int("y"),
-                        api.ChatCommands.Parsers.Int("z"),
+                        api.ChatCommands.Parsers.Int("graveId"),
                         api.ChatCommands.Parsers.Word("player")
                     )
                     .HandleWith(args => DuplicateGrave(args, api, corpseService))
                 .EndSubCommand()
                 .BeginSubCommand("give")
-                    .WithDescription("Give grave items to a player and remove the grave")
+                    .WithDescription("Give grave items by ID to a player and remove the grave")
                     .WithArgs(
-                        api.ChatCommands.Parsers.Int("x"),
-                        api.ChatCommands.Parsers.Int("y"),
-                        api.ChatCommands.Parsers.Int("z"),
+                        api.ChatCommands.Parsers.Int("graveId"),
                         api.ChatCommands.Parsers.Word("player")
                     )
                     .HandleWith(args => GiveGrave(args, api, corpseService))
@@ -85,23 +77,23 @@ namespace FirstStepsTweaks.Commands
         private static TextCommandResult RemoveGrave(TextCommandCallingArgs args, CorpseService corpseService)
         {
             IServerPlayer caller = (IServerPlayer)args.Caller.Player;
-            BlockPos pos = new BlockPos((int)args[0], (int)args[1], (int)args[2]);
+            int graveId = (int)args[0];
 
-            if (!corpseService.TryRemoveGrave(pos))
+            if (!corpseService.TryRemoveGraveById(graveId))
             {
-                caller.SendMessage(GlobalConstants.InfoLogChatGroup, "No grave found at that position.", EnumChatType.CommandError);
+                caller.SendMessage(GlobalConstants.InfoLogChatGroup, "No grave found for that ID.", EnumChatType.CommandError);
                 return TextCommandResult.Success();
             }
 
-            caller.SendMessage(GlobalConstants.InfoLogChatGroup, $"Removed grave at {pos.X} {pos.Y} {pos.Z}.", EnumChatType.CommandSuccess);
+            caller.SendMessage(GlobalConstants.InfoLogChatGroup, $"Removed grave ID {graveId}.", EnumChatType.CommandSuccess);
             return TextCommandResult.Success();
         }
 
         private static TextCommandResult DuplicateGrave(TextCommandCallingArgs args, ICoreServerAPI api, CorpseService corpseService)
         {
             IServerPlayer caller = (IServerPlayer)args.Caller.Player;
-            BlockPos pos = new BlockPos((int)args[0], (int)args[1], (int)args[2]);
-            string playerName = (string)args[3];
+            int graveId = (int)args[0];
+            string playerName = (string)args[1];
 
             IServerPlayer target = GetPlayerByName(api, playerName);
             if (target == null)
@@ -110,21 +102,21 @@ namespace FirstStepsTweaks.Commands
                 return TextCommandResult.Success();
             }
 
-            if (!corpseService.TryDuplicateGraveItems(pos, target))
+            if (!corpseService.TryDuplicateGraveItemsById(graveId, target))
             {
-                caller.SendMessage(GlobalConstants.InfoLogChatGroup, "No grave inventory found at that position.", EnumChatType.CommandError);
+                caller.SendMessage(GlobalConstants.InfoLogChatGroup, "No grave inventory found for that ID.", EnumChatType.CommandError);
                 return TextCommandResult.Success();
             }
 
-            caller.SendMessage(GlobalConstants.InfoLogChatGroup, $"Duplicated grave items at {pos.X} {pos.Y} {pos.Z} to {target.PlayerName}.", EnumChatType.CommandSuccess);
+            caller.SendMessage(GlobalConstants.InfoLogChatGroup, $"Duplicated grave ID {graveId} items to {target.PlayerName}.", EnumChatType.CommandSuccess);
             return TextCommandResult.Success();
         }
 
         private static TextCommandResult GiveGrave(TextCommandCallingArgs args, ICoreServerAPI api, CorpseService corpseService)
         {
             IServerPlayer caller = (IServerPlayer)args.Caller.Player;
-            BlockPos pos = new BlockPos((int)args[0], (int)args[1], (int)args[2]);
-            string playerName = (string)args[3];
+            int graveId = (int)args[0];
+            string playerName = (string)args[1];
 
             IServerPlayer target = GetPlayerByName(api, playerName);
             if (target == null)
@@ -133,13 +125,13 @@ namespace FirstStepsTweaks.Commands
                 return TextCommandResult.Success();
             }
 
-            if (!corpseService.TryGiveGraveItems(pos, target))
+            if (!corpseService.TryGiveGraveItemsById(graveId, target))
             {
-                caller.SendMessage(GlobalConstants.InfoLogChatGroup, "No grave inventory found at that position.", EnumChatType.CommandError);
+                caller.SendMessage(GlobalConstants.InfoLogChatGroup, "No grave inventory found for that ID.", EnumChatType.CommandError);
                 return TextCommandResult.Success();
             }
 
-            caller.SendMessage(GlobalConstants.InfoLogChatGroup, $"Gave grave items at {pos.X} {pos.Y} {pos.Z} to {target.PlayerName} and removed grave.", EnumChatType.CommandSuccess);
+            caller.SendMessage(GlobalConstants.InfoLogChatGroup, $"Gave grave ID {graveId} items to {target.PlayerName} and removed grave.", EnumChatType.CommandSuccess);
             return TextCommandResult.Success();
         }
 

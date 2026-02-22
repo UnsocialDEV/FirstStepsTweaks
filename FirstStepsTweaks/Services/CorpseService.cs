@@ -452,6 +452,25 @@ namespace FirstStepsTweaks.Services
             return graves;
         }
 
+
+        public bool TryRemoveGraveById(int graveId)
+        {
+            if (!TryGetPositionByGraveId(graveId, out BlockPos pos)) return false;
+            return TryRemoveGrave(pos);
+        }
+
+        public bool TryDuplicateGraveItemsById(int graveId, IServerPlayer target)
+        {
+            if (!TryGetPositionByGraveId(graveId, out BlockPos pos)) return false;
+            return TryDuplicateGraveItems(pos, target);
+        }
+
+        public bool TryGiveGraveItemsById(int graveId, IServerPlayer target)
+        {
+            if (!TryGetPositionByGraveId(graveId, out BlockPos pos)) return false;
+            return TryGiveGraveItems(pos, target);
+        }
+
         public bool TryRemoveGrave(BlockPos pos)
         {
             if (pos == null) return false;
@@ -571,6 +590,22 @@ namespace FirstStepsTweaks.Services
             }
 
             TrackOrUpdateActiveGrave(pos, ownerUid, ownerName, graveId);
+        }
+
+
+        private bool TryGetPositionByGraveId(int graveId, out BlockPos pos)
+        {
+            foreach (var record in activeGravesByPos.Values)
+            {
+                if (record.GraveId == graveId)
+                {
+                    pos = record.Position.Copy();
+                    return true;
+                }
+            }
+
+            pos = null;
+            return false;
         }
 
         private void RemoveTrackedGrave(BlockPos pos)
