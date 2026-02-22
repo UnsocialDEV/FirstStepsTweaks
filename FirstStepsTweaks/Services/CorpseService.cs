@@ -13,6 +13,7 @@ namespace FirstStepsTweaks.Services
     public class CorpseService
     {
         private readonly ICoreServerAPI api;
+        private const string EmergencyBackupPrefix = "deathbones-emergency-";
         private readonly HashSet<BlockPos> suppressDropPositions = new HashSet<BlockPos>();
         private readonly HashSet<BlockPos> activeGraves = new HashSet<BlockPos>();
         private int graveBlockId;
@@ -96,22 +97,34 @@ namespace FirstStepsTweaks.Services
             if (invManager == null) return;
 
             List<ItemStack> savedStacks = new List<ItemStack>();
-
-            // Clear hotbar
-            ClearInventory(invManager.GetOwnInventory("hotbar"), savedStacks);
-
-            // Clear backpack
-            ClearInventory(invManager.GetOwnInventory("backpack"), savedStacks);
+            CollectInventory(invManager.GetOwnInventory("hotbar"), savedStacks);
+            CollectInventory(invManager.GetOwnInventory("backpack"), savedStacks);
 
             // Do nothing if no items
             if (savedStacks.Count == 0) return;
 
             BlockPos pos = entity.Pos.AsBlockPos.Copy();
 
-            SaveToWorldData(player, savedStacks, pos);
+            if (!SaveEmergencyBackup(player, savedStacks, pos))
+            {
+                api.Logger.Error($"[GRAVE SAVE] Failed emergency backup for {player.PlayerUID}. Inventory was not touched.");
+                return;
+            }
+
+            if (!SaveToWorldData(player, savedStacks, pos))
+            {
+                api.Logger.Error($"[GRAVE SAVE] Failed grave save for {player.PlayerUID}. Inventory was not touched.");
+                return;
+            }
+
+            // Save succeeded, now clear source inventories
+            ClearInventory(invManager.GetOwnInventory("hotbar"));
+            ClearInventory(invManager.GetOwnInventory("backpack"));
+
             SpawnBones(pos);
         }
-        private void ClearInventory(IInventory inventory, List<ItemStack> savedStacks)
+
+        private void CollectInventory(IInventory inventory, List<ItemStack> savedStacks)
         {
             if (inventory == null) return;
 
@@ -120,12 +133,76 @@ namespace FirstStepsTweaks.Services
                 if (slot?.Itemstack != null)
                 {
                     savedStacks.Add(slot.Itemstack.Clone());
+                }
+            }
+        }
+
+        private void ClearInventory(IInventory inventory)
+        {
+            if (inventory == null) return;
+
+            foreach (var slot in inventory)
+            {
+                if (slot?.Itemstack != null)
+                {
                     slot.Itemstack = null;
                     slot.MarkDirty();
                 }
             }
         }
-        private void SaveToWorldData(IPlayer player, List<ItemStack> stacks, BlockPos pos)
+
+        private bool SaveEmergencyBackup(IPlayer player, List<ItemStack> stacks, BlockPos pos)
+        {
+            byte[] raw = SerializeGraveData(player, stacks, pos);
+            if (raw == null || raw.Length == 0) return false;
+
+            string backupKey = GetEmergencyBackupKey(player.PlayerUID);
+            api.WorldManager.SaveGame.StoreData(backupKey, raw);
+
+            byte[] confirm = api.WorldManager.SaveGame.GetData(backupKey);
+            bool ok = confirm != null && confirm.Length > 0;
+            if (ok)
+            {
+                api.Logger.Warning($"[GRAVE BACKUP] Emergency backup updated for {player.PlayerUID}");
+            }
+
+            return ok;
+        }
+
+        private bool SaveToWorldData(IPlayer player, List<ItemStack> stacks, BlockPos pos)
+        {
+            string key = $"deathbones-{pos.X}-{pos.Y}-{pos.Z}";
+
+            List<ItemStack> mergedStacks = new List<ItemStack>();
+            byte[] existingRaw = api.WorldManager.SaveGame.GetData(key);
+            if (existingRaw != null && existingRaw.Length > 0)
+            {
+                var existing = LoadStacksFromRaw(existingRaw);
+                if (existing != null && existing.Count > 0)
+                {
+                    mergedStacks.AddRange(existing);
+                    api.Logger.Warning($"[GRAVE SAVE] Merging {existing.Count} existing stacks at {pos}");
+                }
+            }
+
+            mergedStacks.AddRange(stacks);
+
+            byte[] raw = SerializeGraveData(player, mergedStacks, pos);
+            if (raw == null || raw.Length == 0) return false;
+
+            api.WorldManager.SaveGame.StoreData(key, raw);
+            byte[] confirm = api.WorldManager.SaveGame.GetData(key);
+            if (confirm == null || confirm.Length == 0)
+            {
+                return false;
+            }
+
+            activeGraves.Add(pos.Copy());
+            api.Logger.Warning($"[GRAVE SAVE] Stored grave at {pos} with {mergedStacks.Count} stack(s)");
+            return true;
+        }
+
+        private byte[] SerializeGraveData(IPlayer player, List<ItemStack> stacks, BlockPos pos)
         {
             TreeAttribute tree = new TreeAttribute();
 
@@ -152,13 +229,26 @@ namespace FirstStepsTweaks.Services
             using (BinaryWriter writer = new BinaryWriter(ms))
             {
                 tree.ToBytes(writer);
+                return ms.ToArray();
+            }
+        }
 
-                string key = $"deathbones-{pos.X}-{pos.Y}-{pos.Z}";
-                api.WorldManager.SaveGame.StoreData(key, ms.ToArray());
+        private List<ItemStack> LoadStacksFromRaw(byte[] raw)
+        {
+            TreeAttribute tree;
+            using (var ms = new MemoryStream(raw))
+            using (var reader = new BinaryReader(ms))
+            {
+                tree = new TreeAttribute();
+                tree.FromBytes(reader);
             }
 
-            activeGraves.Add(pos.Copy());
-            api.Logger.Warning($"[GRAVE SAVE] Stored grave at {pos}");
+            return LoadInventoryFromTree(tree);
+        }
+
+        private string GetEmergencyBackupKey(string playerUid)
+        {
+            return $"{EmergencyBackupPrefix}{playerUid}";
         }
 
         private void SpawnBones(BlockPos pos)
@@ -181,8 +271,12 @@ namespace FirstStepsTweaks.Services
             string key = $"deathbones-{pos.X}-{pos.Y}-{pos.Z}";
             byte[] raw = api.WorldManager.SaveGame.GetData(key);
 
-            // If no grave data exists for this skull, treat it like a normal skull
-            if (raw == null || raw.Length == 0) return;
+            // Failsafe: if grave entry is missing/corrupt, attempt emergency backup restore
+            if (raw == null || raw.Length == 0)
+            {
+                TryRestoreEmergencyBackup(byPlayer, "missing grave data");
+                return;
+            }
 
             TreeAttribute tree;
             using (var ms = new MemoryStream(raw))
@@ -230,6 +324,9 @@ namespace FirstStepsTweaks.Services
             // Clear saved data (your build has no DeleteData)
             api.WorldManager.SaveGame.StoreData(key, new byte[0]);
 
+            // Clear emergency backup once a grave is successfully claimed
+            api.WorldManager.SaveGame.StoreData(GetEmergencyBackupKey(byPlayer.PlayerUID), new byte[0]);
+
             // Stop tracking as an active grave
             activeGraves.RemoveWhere(p => p.Equals(pos));
 
@@ -244,8 +341,9 @@ namespace FirstStepsTweaks.Services
 
             foreach (var stack in stacks)
             {
-                api.Logger.Warning($"[GRAVE GIVE] Attempting to give {stack.Collectible?.Code} x{stack.StackSize}");
                 if (stack == null || stack.StackSize <= 0) continue;
+
+                api.Logger.Warning($"[GRAVE GIVE] Attempting to give {stack.Collectible?.Code} x{stack.StackSize}");
 
                 ItemStack giveStack = stack.Clone();
 
@@ -292,6 +390,27 @@ namespace FirstStepsTweaks.Services
             }
 
             return stacks;
+        }
+
+        private bool TryRestoreEmergencyBackup(IServerPlayer player, string reason)
+        {
+            string backupKey = GetEmergencyBackupKey(player.PlayerUID);
+            byte[] backupRaw = api.WorldManager.SaveGame.GetData(backupKey);
+            if (backupRaw == null || backupRaw.Length == 0) return false;
+
+            List<ItemStack> backupStacks = LoadStacksFromRaw(backupRaw);
+            if (backupStacks == null || backupStacks.Count == 0) return false;
+
+            GiveItemsBack(player, backupStacks);
+            api.WorldManager.SaveGame.StoreData(backupKey, new byte[0]);
+
+            player.SendMessage(
+                GlobalConstants.GeneralChatGroup,
+                $"Your corpse backup was restored ({reason}).",
+                EnumChatType.Notification
+            );
+            api.Logger.Warning($"[GRAVE BACKUP] Restored emergency backup for {player.PlayerUID} ({reason})");
+            return true;
         }
     }
 }
