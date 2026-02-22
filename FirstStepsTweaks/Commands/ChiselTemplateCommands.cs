@@ -161,6 +161,7 @@ namespace FirstStepsTweaks.Commands
 
                 placedEntity.FromTreeAttributes(stateTree, api.World);
                 placedEntity.MarkDirty(true);
+                api.World.BlockAccessor.MarkBlockDirty(placePos);
 
                 string successMessage = $"Loaded chiseled template '{sanitizedName}' at {placePos.X} {placePos.Y} {placePos.Z}.";
                 caller.SendMessage(GlobalConstants.InfoLogChatGroup, successMessage, EnumChatType.CommandSuccess);
