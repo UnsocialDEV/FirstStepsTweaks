@@ -18,13 +18,8 @@ namespace FirstStepsTweaks.Commands
                 .RequiresPlayer()
                 .RequiresPrivilege(Privilege.controlserver)
                 .BeginSubCommand("capture")
-                    .WithDescription("Capture a chiseled block at x y z to a named template")
-                    .WithArgs(
-                        api.ChatCommands.Parsers.Word("templateName"),
-                        api.ChatCommands.Parsers.Int("x"),
-                        api.ChatCommands.Parsers.Int("y"),
-                        api.ChatCommands.Parsers.Int("z")
-                    )
+                    .WithDescription("Capture the chiseled block you are looking at to a named template")
+                    .WithArgs(api.ChatCommands.Parsers.Word("templateName"))
                     .HandleWith(args => CaptureTemplate(api, args))
                 .EndSubCommand();
         }
@@ -34,9 +29,6 @@ namespace FirstStepsTweaks.Commands
             IServerPlayer caller = (IServerPlayer)args.Caller.Player;
 
             string templateName = (string)args[0];
-            int x = (int)args[1];
-            int y = (int)args[2];
-            int z = (int)args[3];
 
             string sanitizedName = SanitizeTemplateName(templateName);
             if (string.IsNullOrWhiteSpace(sanitizedName))
@@ -45,11 +37,18 @@ namespace FirstStepsTweaks.Commands
                 return TextCommandResult.Success();
             }
 
-            BlockPos pos = new BlockPos(x, y, z);
+            BlockSelection selection = caller.CurrentBlockSelection;
+            if (selection == null)
+            {
+                caller.SendMessage(GlobalConstants.InfoLogChatGroup, "Look at a block before using this command.", EnumChatType.CommandError);
+                return TextCommandResult.Success();
+            }
+
+            BlockPos pos = selection.Position.Copy();
             Block block = api.World.BlockAccessor.GetBlock(pos);
             if (block == null || block.Id == 0)
             {
-                caller.SendMessage(GlobalConstants.InfoLogChatGroup, $"No block found at {x} {y} {z}.", EnumChatType.CommandError);
+                caller.SendMessage(GlobalConstants.InfoLogChatGroup, $"No block found at {pos.X} {pos.Y} {pos.Z}.", EnumChatType.CommandError);
                 return TextCommandResult.Success();
             }
 
@@ -79,13 +78,13 @@ namespace FirstStepsTweaks.Commands
                 string filePath = Path.Combine(templatesDir, sanitizedName + ".json");
                 File.WriteAllText(filePath, json, Encoding.UTF8);
 
-                string successMessage = $"Captured chiseled template '{sanitizedName}' from {x} {y} {z}.";
+                string successMessage = $"Captured chiseled template '{sanitizedName}' from {pos.X} {pos.Y} {pos.Z}.";
                 caller.SendMessage(GlobalConstants.InfoLogChatGroup, successMessage, EnumChatType.CommandSuccess);
                 api.Logger.Notification($"[FirstStepsTweaks] {successMessage} Saved to: {filePath}");
             }
             catch (Exception ex)
             {
-                string errorMessage = $"Failed to capture chisel template '{sanitizedName}' at {x} {y} {z}.";
+                string errorMessage = $"Failed to capture chisel template '{sanitizedName}' at {pos.X} {pos.Y} {pos.Z}.";
                 caller.SendMessage(GlobalConstants.InfoLogChatGroup, errorMessage, EnumChatType.CommandError);
                 api.Logger.Error($"[FirstStepsTweaks] {errorMessage} Error: {ex}");
             }
