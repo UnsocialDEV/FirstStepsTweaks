@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using Vintagestory.API.Common;
@@ -75,7 +76,7 @@ namespace FirstStepsTweaks.Commands
                 TreeAttribute stateTree = new TreeAttribute();
                 blockEntity.ToTreeAttributes(stateTree);
 
-                string blockCode = block.Code?.ToShortString() ?? "game:chiseledblock";
+                string blockCode = block.Code?.ToShortString() ?? string.Empty;
                 string encodedState = EncodeTreeAttribute(stateTree);
 
                 string templatesDir = api.GetOrCreateDataPath("ChiselTemplates");
@@ -137,7 +138,7 @@ namespace FirstStepsTweaks.Commands
                 string blockCode = lines[0];
                 if (string.IsNullOrWhiteSpace(blockCode))
                 {
-                    blockCode = "game:chiseledblock";
+                    blockCode = string.Empty;
                 }
 
                 Block blockToPlace = ResolveTemplateBlock(api, blockCode);
@@ -181,19 +182,49 @@ namespace FirstStepsTweaks.Commands
 
         private static Block ResolveTemplateBlock(ICoreServerAPI api, string templateBlockCode)
         {
-            if (!string.IsNullOrWhiteSpace(templateBlockCode))
+            foreach (string candidateCode in BuildTemplateBlockCandidates(templateBlockCode))
             {
-                Block templateBlock = api.World.GetBlock(new AssetLocation(templateBlockCode));
-                if (IsUsableBlock(templateBlock))
+                Block candidateBlock = api.World.GetBlock(new AssetLocation(candidateCode));
+                if (IsUsableBlock(candidateBlock))
                 {
-                    return templateBlock;
+                    return candidateBlock;
                 }
             }
 
-            Block fallback = api.World.GetBlock(new AssetLocation("game:chiseledblock"));
-            if (IsUsableBlock(fallback))
+            Block discoveredFallback = FindFallbackChiseledBlock(api);
+            if (IsUsableBlock(discoveredFallback))
             {
-                return fallback;
+                return discoveredFallback;
+            }
+
+            return null;
+        }
+
+        private static IEnumerable<string> BuildTemplateBlockCandidates(string templateBlockCode)
+        {
+            if (!string.IsNullOrWhiteSpace(templateBlockCode))
+            {
+                yield return templateBlockCode;
+            }
+
+            yield return "game:chiseledblock-stonegranite";
+            yield return "game:chiseledblock";
+        }
+
+        private static Block FindFallbackChiseledBlock(ICoreServerAPI api)
+        {
+            foreach (Block block in api.World.Blocks)
+            {
+                if (!IsUsableBlock(block))
+                {
+                    continue;
+                }
+
+                string codePath = block.Code?.Path?.ToLowerInvariant() ?? string.Empty;
+                if (codePath.StartsWith("chiseledblock"))
+                {
+                    return block;
+                }
             }
 
             return null;
@@ -207,7 +238,10 @@ namespace FirstStepsTweaks.Commands
             }
 
             string path = block.Code?.Path?.ToLowerInvariant() ?? string.Empty;
-            return path != "error" && !path.Contains("error");
+            return path != "error"
+                && path != "unknown"
+                && !path.Contains("error")
+                && !path.Contains("unknown");
         }
 
         private static string EncodeTreeAttribute(TreeAttribute stateTree)
