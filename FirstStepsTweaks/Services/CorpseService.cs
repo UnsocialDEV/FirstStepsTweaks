@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Reflection;
 using FirstStepsTweaks.Config;
 using Vintagestory.API.Common;
 using Vintagestory.API.Common.Entities;
@@ -636,19 +637,30 @@ namespace FirstStepsTweaks.Services
             return $"{ownerName} Grave";
         }
 
+        private void TrySetBlockEntityName(BlockPos pos, string displayName)
+        {
+            var blockEntity = api.World.BlockAccessor.GetBlockEntity(pos);
+            if (blockEntity == null) return;
+
+            PropertyInfo attributesProperty =
+                blockEntity.GetType().GetProperty("Attributes") ??
+                blockEntity.GetType().GetProperty("TreeAttributes") ??
+                blockEntity.GetType().GetProperty("WatchedAttributes");
+
+            if (attributesProperty?.GetValue(blockEntity) is ITreeAttribute tree)
+            {
+                tree.SetString("name", displayName);
+                blockEntity.MarkDirty(true);
+            }
+        }
+
         private void PlaceGraveBlock(BlockPos pos, string ownerName, int blockId = 0)
         {
             int idToPlace = blockId != 0 ? blockId : graveBlockId;
             if (idToPlace == 0 || pos == null) return;
 
             api.World.BlockAccessor.SetBlock(idToPlace, pos);
-
-            var blockEntity = api.World.BlockAccessor.GetBlockEntity(pos);
-            if (blockEntity?.Attributes != null)
-            {
-                blockEntity.Attributes.SetString("name", BuildGraveDisplayName(ownerName));
-                blockEntity.MarkDirty(true);
-            }
+            TrySetBlockEntityName(pos, BuildGraveDisplayName(ownerName));
 
             api.World.BlockAccessor.MarkBlockDirty(pos);
         }
