@@ -95,7 +95,7 @@ namespace FirstStepsTweaks.Services
 
                     if (raw != null && raw.Length > 0)
                     {
-                        api.World.BlockAccessor.SetBlock(graveBlockId, pos);
+                        PlaceGraveBlock(pos);
                     }
                 }
             }
@@ -279,7 +279,7 @@ namespace FirstStepsTweaks.Services
             Block bones = api.World.GetBlock(new AssetLocation(corpseConfig.GraveBlockCode));
             if (bones == null) return;
 
-            api.World.BlockAccessor.SetBlock(bones.BlockId, pos);
+            PlaceGraveBlock(pos, bones.BlockId);
         }
         public void OnBlockBroken(IServerPlayer byPlayer, int oldblockId, BlockSelection blockSel)
         {
@@ -323,7 +323,7 @@ namespace FirstStepsTweaks.Services
                 // Put the grave block back immediately
                 if (graveBlockId != 0)
                 {
-                    api.World.BlockAccessor.SetBlock(graveBlockId, pos);
+                    PlaceGraveBlock(pos);
                 }
 
                 // Remove the dropped skull entity near this position
@@ -624,6 +624,15 @@ namespace FirstStepsTweaks.Services
         private string GetGravePath()
         {
             return new AssetLocation(corpseConfig.GraveBlockCode).Path;
+        }
+
+        private void PlaceGraveBlock(BlockPos pos, int blockId = 0)
+        {
+            int idToPlace = blockId != 0 ? blockId : graveBlockId;
+            if (idToPlace == 0 || pos == null) return;
+
+            api.World.BlockAccessor.SetBlock(idToPlace, pos);
+            api.World.BlockAccessor.MarkBlockDirty(pos);
         }
     }
 }
