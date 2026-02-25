@@ -95,7 +95,7 @@ namespace FirstStepsTweaks.Services
 
                     if (raw != null && raw.Length > 0)
                     {
-                        PlaceGraveBlock(pos);
+                        PlaceGraveBlock(pos, record.OwnerName);
                     }
                 }
             }
@@ -142,7 +142,7 @@ namespace FirstStepsTweaks.Services
             ClearInventory(invManager.GetOwnInventory("hotbar"));
             ClearInventory(invManager.GetOwnInventory("backpack"));
 
-            SpawnBones(pos);
+            SpawnBones(pos, player.PlayerName);
         }
 
         private void CollectInventory(IInventory inventory, List<ItemStack> savedStacks)
@@ -274,12 +274,12 @@ namespace FirstStepsTweaks.Services
             return $"{EmergencyBackupPrefix}{playerUid}";
         }
 
-        private void SpawnBones(BlockPos pos)
+        private void SpawnBones(BlockPos pos, string ownerName)
         {
             Block bones = api.World.GetBlock(new AssetLocation(corpseConfig.GraveBlockCode));
             if (bones == null) return;
 
-            PlaceGraveBlock(pos, bones.BlockId);
+            PlaceGraveBlock(pos, ownerName, bones.BlockId);
         }
         public void OnBlockBroken(IServerPlayer byPlayer, int oldblockId, BlockSelection blockSel)
         {
@@ -323,7 +323,7 @@ namespace FirstStepsTweaks.Services
                 // Put the grave block back immediately
                 if (graveBlockId != 0)
                 {
-                    PlaceGraveBlock(pos);
+                    PlaceGraveBlock(pos, tree.GetString("ownerName"));
                 }
 
                 // Remove the dropped skull entity near this position
@@ -626,12 +626,30 @@ namespace FirstStepsTweaks.Services
             return new AssetLocation(corpseConfig.GraveBlockCode).Path;
         }
 
-        private void PlaceGraveBlock(BlockPos pos, int blockId = 0)
+        private string BuildGraveDisplayName(string ownerName)
+        {
+            if (string.IsNullOrWhiteSpace(ownerName))
+            {
+                return "Grave";
+            }
+
+            return $"{ownerName} Grave";
+        }
+
+        private void PlaceGraveBlock(BlockPos pos, string ownerName, int blockId = 0)
         {
             int idToPlace = blockId != 0 ? blockId : graveBlockId;
             if (idToPlace == 0 || pos == null) return;
 
             api.World.BlockAccessor.SetBlock(idToPlace, pos);
+
+            var blockEntity = api.World.BlockAccessor.GetBlockEntity(pos);
+            if (blockEntity?.Attributes != null)
+            {
+                blockEntity.Attributes.SetString("name", BuildGraveDisplayName(ownerName));
+                blockEntity.MarkDirty(true);
+            }
+
             api.World.BlockAccessor.MarkBlockDirty(pos);
         }
     }
