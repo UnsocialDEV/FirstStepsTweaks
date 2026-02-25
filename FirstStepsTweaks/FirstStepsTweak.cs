@@ -33,6 +33,7 @@ namespace FirstStepsTweaks
             DebugCommands.Register(api);
             DiscordCommands.Register(api);
             SpawnCommands.Register(api);
+            BackCommands.Register(api);
             HomeCommands.Register(api);
             KitCommands.Register(api);
             TpaCommands.Register(api);
