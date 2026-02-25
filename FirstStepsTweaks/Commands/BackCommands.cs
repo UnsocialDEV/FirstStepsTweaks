@@ -28,7 +28,7 @@ namespace FirstStepsTweaks.Commands
                 return;
             }
 
-            LastPositionsByPlayerUid[player.PlayerUID] = player.Entity.Pos.XYZ.Copy();
+            LastPositionsByPlayerUid[player.PlayerUID] = new Vec3d(player.Entity.Pos.X, player.Entity.Pos.Y, player.Entity.Pos.Z);
         }
 
         private static TextCommandResult Back(TextCommandCallingArgs args)
@@ -45,7 +45,7 @@ namespace FirstStepsTweaks.Commands
                 return TextCommandResult.Success();
             }
 
-            Vec3d currentLocation = player.Entity.Pos.XYZ.Copy();
+            Vec3d currentLocation = new Vec3d(player.Entity.Pos.X, player.Entity.Pos.Y, player.Entity.Pos.Z);
 
             player.Entity.TeleportToDouble(lastLocation.X, lastLocation.Y, lastLocation.Z);
 
