@@ -1,8 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+﻿using FirstStepsTweaks.Config;
 using Vintagestory.API.Common;
 using Vintagestory.API.Config;
 using Vintagestory.API.Server;
@@ -11,8 +7,12 @@ namespace FirstStepsTweaks.Commands
 {
     public class DiscordCommands
     {
-        public static void Register(ICoreServerAPI api)
+        private static DiscordCommandConfig discordCommandConfig = new DiscordCommandConfig();
+
+        public static void Register(ICoreServerAPI api, FirstStepsTweaksConfig config)
         {
+            discordCommandConfig = config?.DiscordCommand ?? new DiscordCommandConfig();
+
             api.ChatCommands
                 .Create("discord")
                 .WithDescription("Displays the Discord invite")
@@ -24,17 +24,10 @@ namespace FirstStepsTweaks.Commands
         private static TextCommandResult Discord(ICoreServerAPI api, TextCommandCallingArgs args)
         {
             IServerPlayer player = (IServerPlayer)args.Caller.Player;
+            var message = discordCommandConfig.InviteMessage;
 
-            player.SendMessage(
-                GlobalConstants.GeneralChatGroup,
-                "Discord: discord.gg/8SqKaERD6m",
-                EnumChatType.AllGroups
-                );
-
-            player.SendMessage(
-                GlobalConstants.InfoLogChatGroup,
-                "Discord: discord.gg/8SqKaERD6m",
-                EnumChatType.AllGroups);
+            player.SendMessage(GlobalConstants.GeneralChatGroup, message, EnumChatType.AllGroups);
+            player.SendMessage(GlobalConstants.InfoLogChatGroup, message, EnumChatType.AllGroups);
 
             return TextCommandResult.Success();
         }

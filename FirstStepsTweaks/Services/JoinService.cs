@@ -1,4 +1,4 @@
-﻿using System;
+﻿using FirstStepsTweaks.Config;
 using Vintagestory.API.Common;
 using Vintagestory.API.Server;
 
@@ -7,12 +7,14 @@ namespace FirstStepsTweaks.Services
     public class JoinService
     {
         private readonly ICoreServerAPI api;
+        private readonly JoinConfig joinConfig;
 
         private const string FirstJoinKey = "fst_firstjoin";
 
-        public JoinService(ICoreServerAPI api)
+        public JoinService(ICoreServerAPI api, FirstStepsTweaksConfig config)
         {
             this.api = api;
+            joinConfig = config?.Join ?? new JoinConfig();
         }
 
         public void OnPlayerJoin(IServerPlayer player)
@@ -22,7 +24,7 @@ namespace FirstStepsTweaks.Services
             if (data == null)
             {
                 api.BroadcastMessageToAllGroups(
-                    $"Welcome {player.PlayerName} to the server, this is their first time joining!",
+                    joinConfig.FirstJoinMessage.Replace("{player}", player.PlayerName),
                     EnumChatType.AllGroups
                 );
 
@@ -31,7 +33,7 @@ namespace FirstStepsTweaks.Services
             else
             {
                 api.BroadcastMessageToAllGroups(
-                    $"Welcome back {player.PlayerName}!",
+                    joinConfig.ReturningJoinMessage.Replace("{player}", player.PlayerName),
                     EnumChatType.AllGroups
                 );
             }

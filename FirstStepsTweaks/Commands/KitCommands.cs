@@ -1,7 +1,8 @@
-﻿using Vintagestory.API.Common;
+﻿using FirstStepsTweaks.Config;
+using FirstStepsTweaks.Services;
+using Vintagestory.API.Common;
 using Vintagestory.API.Config;
 using Vintagestory.API.Server;
-using FirstStepsTweaks.Services;   // Make sure ItemService is here
 
 namespace FirstStepsTweaks.Commands
 {
@@ -9,22 +10,31 @@ namespace FirstStepsTweaks.Commands
     {
         private const string StarterKey = "fst_starterclaimed";
         private const string WinterKey = "fst_winterclaimed";
+        private static KitConfig kitConfig = new KitConfig();
 
-        public static void Register(ICoreServerAPI api)
+        public static void Register(ICoreServerAPI api, FirstStepsTweaksConfig config)
         {
-            api.ChatCommands
-                .Create("starterkit")
-                .WithDescription("Gives starter items")
-                .RequiresPlayer()
-                .RequiresPrivilege(Privilege.chat)
-                .HandleWith(args => StarterKit(api, args));
+            kitConfig = config?.Kits ?? new KitConfig();
 
-            api.ChatCommands
-                .Create("winterkit")
-                .WithDescription("Gives winter starter kit")
-                .RequiresPlayer()
-                .RequiresPrivilege(Privilege.chat)
-                .HandleWith(args => WinterKit(api, args));
+            if (kitConfig.EnableStarterKit)
+            {
+                api.ChatCommands
+                    .Create("starterkit")
+                    .WithDescription("Gives starter items")
+                    .RequiresPlayer()
+                    .RequiresPrivilege(Privilege.chat)
+                    .HandleWith(args => StarterKit(api, args));
+            }
+
+            if (kitConfig.EnableWinterKit)
+            {
+                api.ChatCommands
+                    .Create("winterkit")
+                    .WithDescription("Gives winter starter kit")
+                    .RequiresPlayer()
+                    .RequiresPrivilege(Privilege.chat)
+                    .HandleWith(args => WinterKit(api, args));
+            }
         }
 
         private static TextCommandResult StarterKit(ICoreServerAPI api, TextCommandCallingArgs args)
@@ -33,29 +43,13 @@ namespace FirstStepsTweaks.Commands
 
             if (player.GetModdata(StarterKey) != null)
             {
-                player.SendMessage(
-                    GlobalConstants.InfoLogChatGroup,
-                    "You have already claimed your starter kit.",
-                    EnumChatType.CommandError
-                );
+                player.SendMessage(GlobalConstants.InfoLogChatGroup, "You have already claimed your starter kit.", EnumChatType.CommandError);
                 return TextCommandResult.Success();
             }
 
-            // Give items
-            ItemService.GiveCollectible(api, player, "game:flint", 6);
-            ItemService.GiveCollectible(api, player, "game:stick", 6);
-            ItemService.GiveCollectible(api, player, "game:drygrass", 1);
-            ItemService.GiveCollectible(api, player, "game:firewood", 4);
-            ItemService.GiveCollectible(api, player, "game:torch-basic-lit-up", 4);
-            ItemService.GiveCollectible(api, player, "game:bread-rye-perfect", 8);
-
+            GiveConfiguredItems(api, player, kitConfig.StarterItems);
             player.SetModdata(StarterKey, new byte[] { 1 });
-
-            player.SendMessage(
-                GlobalConstants.InfoLogChatGroup,
-                "You have received your starter kit!",
-                EnumChatType.CommandSuccess
-            );
+            player.SendMessage(GlobalConstants.InfoLogChatGroup, "You have received your starter kit!", EnumChatType.CommandSuccess);
 
             return TextCommandResult.Success();
         }
@@ -66,28 +60,26 @@ namespace FirstStepsTweaks.Commands
 
             if (player.GetModdata(WinterKey) != null)
             {
-                player.SendMessage(
-                    GlobalConstants.InfoLogChatGroup,
-                    "You have already claimed your winter kit.",
-                    EnumChatType.CommandError
-                );
+                player.SendMessage(GlobalConstants.InfoLogChatGroup, "You have already claimed your winter kit.", EnumChatType.CommandError);
                 return TextCommandResult.Success();
             }
 
-            ItemService.GiveCollectible(api, player, "game:clothes-upperbodyover-fur-coat", 1);
-            ItemService.GiveCollectible(api, player, "game:clothes-foot-knee-high-fur-boots", 1);
-            ItemService.GiveCollectible(api, player, "game:clothes-hand-fur-gloves", 1);
-            ItemService.GiveCollectible(api, player, "game:redmeat-cooked", 12);
-
+            GiveConfiguredItems(api, player, kitConfig.WinterItems);
             player.SetModdata(WinterKey, new byte[] { 1 });
-
-            player.SendMessage(
-                GlobalConstants.InfoLogChatGroup,
-                "You have received your winter kit!",
-                EnumChatType.CommandSuccess
-            );
+            player.SendMessage(GlobalConstants.InfoLogChatGroup, "You have received your winter kit!", EnumChatType.CommandSuccess);
 
             return TextCommandResult.Success();
+        }
+
+        private static void GiveConfiguredItems(ICoreServerAPI api, IServerPlayer player, System.Collections.Generic.List<KitItemConfig> items)
+        {
+            if (items == null) return;
+
+            foreach (var item in items)
+            {
+                if (item == null || string.IsNullOrWhiteSpace(item.Code) || item.Quantity <= 0) continue;
+                ItemService.GiveCollectible(api, player, item.Code, item.Quantity);
+            }
         }
     }
 }

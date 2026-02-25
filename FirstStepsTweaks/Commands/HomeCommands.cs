@@ -1,4 +1,5 @@
 ﻿using System;
+using FirstStepsTweaks.Config;
 using Vintagestory.API.Common;
 using Vintagestory.API.Config;
 using Vintagestory.API.Server;
@@ -9,8 +10,12 @@ namespace FirstStepsTweaks.Commands
     {
         private const string HomeKey = "fst_homepos";
 
-        public static void Register(ICoreServerAPI api)
+        private static TeleportConfig teleportConfig = new TeleportConfig();
+
+        public static void Register(ICoreServerAPI api, FirstStepsTweaksConfig config)
         {
+            teleportConfig = config?.Teleport ?? new TeleportConfig();
+
             api.ChatCommands
                 .Create("sethome")
                 .RequiresPlayer()
@@ -85,7 +90,7 @@ namespace FirstStepsTweaks.Commands
             double startY = player.Entity.Pos.Y;
             double startZ = player.Entity.Pos.Z;
 
-            int secondsRemaining = 10;
+            int secondsRemaining = teleportConfig.WarmupSeconds;
             long listenerId = 0;
 
             listenerId = api.Event.RegisterGameTickListener((dt) =>
@@ -101,7 +106,7 @@ namespace FirstStepsTweaks.Commands
                 double dy = Math.Abs(player.Entity.Pos.Y - startY);
                 double dz = Math.Abs(player.Entity.Pos.Z - startZ);
 
-                if (dx > 0.1 || dy > 0.1 || dz > 0.1)
+                if (dx > teleportConfig.CancelMoveThreshold || dy > teleportConfig.CancelMoveThreshold || dz > teleportConfig.CancelMoveThreshold)
                 {
                     player.SendMessage(
                         GlobalConstants.InfoLogChatGroup,
@@ -137,7 +142,7 @@ namespace FirstStepsTweaks.Commands
                     api.Event.UnregisterGameTickListener(listenerId);
                 }
 
-            }, 1000); // 1 second
+            }, teleportConfig.TickIntervalMs);
 
             return TextCommandResult.Success();
         }

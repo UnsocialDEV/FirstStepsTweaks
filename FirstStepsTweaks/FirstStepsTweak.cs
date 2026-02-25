@@ -1,4 +1,5 @@
 ﻿using FirstStepsTweaks.Commands;
+using FirstStepsTweaks.Config;
 using FirstStepsTweaks.Discord;
 using FirstStepsTweaks.Services;
 using Vintagestory.API.Common;
@@ -8,38 +9,62 @@ namespace FirstStepsTweaks
 {
     public class FirstStepsTweaks : ModSystem
     {
-        private ICoreServerAPI api;
-
         private DiscordBridge discord;
         private JoinService joinService;
         private CorpseService corpseService;
 
         public override void StartServerSide(ICoreServerAPI api)
         {
-            this.api = api;
+            var config = LoadConfig(api);
 
-            // Services
             discord = new DiscordBridge(api);
-            joinService = new JoinService(api);
-            corpseService = new CorpseService(api);
+            joinService = new JoinService(api, config);
 
-            // Events
-            api.Event.OnEntityDeath += corpseService.OnEntityDeath;
-            api.Event.OnEntityDeath += BackCommands.OnEntityDeath;
-            api.Event.DidBreakBlock += corpseService.OnBlockBroken;
-            api.Event.PlayerJoin += joinService.OnPlayerJoin;
+            if (config.Features.EnableCorpseService)
+            {
+                corpseService = new CorpseService(api, config);
+                api.Event.OnEntityDeath += corpseService.OnEntityDeath;
+                api.Event.DidBreakBlock += corpseService.OnBlockBroken;
+            }
+
+            if (config.Features.EnableBackCommand)
+            {
+                api.Event.OnEntityDeath += BackCommands.OnEntityDeath;
+                BackCommands.Register(api, config);
+            }
+
+            if (config.Features.EnableJoinBroadcasts)
+            {
+                api.Event.PlayerJoin += joinService.OnPlayerJoin;
+            }
+
             api.Event.PlayerChat += discord.OnPlayerChat;
 
-            // Commands
-            DebugCommands.Register(api);
-            DiscordCommands.Register(api);
-            SpawnCommands.Register(api);
-            BackCommands.Register(api);
-            HomeCommands.Register(api);
-            KitCommands.Register(api);
-            TpaCommands.Register(api);
-            UtilityCommands.Register(api);
-            CorpseAdminCommands.Register(api, corpseService);
+            if (config.Features.EnableDebugCommand) DebugCommands.Register(api);
+            if (config.Features.EnableDiscordCommand) DiscordCommands.Register(api, config);
+            if (config.Features.EnableSpawnCommands) SpawnCommands.Register(api, config);
+            if (config.Features.EnableHomeCommands) HomeCommands.Register(api, config);
+            if (config.Features.EnableKitCommands) KitCommands.Register(api, config);
+            if (config.Features.EnableTpaCommands) TpaCommands.Register(api, config);
+            if (config.Features.EnableUtilityCommands) UtilityCommands.Register(api, config);
+            if (config.Features.EnableCorpseAdminCommands && corpseService != null)
+            {
+                CorpseAdminCommands.Register(api, corpseService);
+            }
+        }
+
+        private FirstStepsTweaksConfig LoadConfig(ICoreServerAPI api)
+        {
+            const string fileName = "FirstStepsTweaks.json";
+            var config = api.LoadModConfig<FirstStepsTweaksConfig>(fileName);
+            if (config == null)
+            {
+                config = new FirstStepsTweaksConfig();
+                api.StoreModConfig(config, fileName);
+                api.Logger.Warning("[FirstStepsTweaks] Created config file FirstStepsTweaks.json. Review and adjust as needed.");
+            }
+
+            return config;
         }
     }
 }

@@ -1,4 +1,5 @@
 ﻿using System.Linq;
+using FirstStepsTweaks.Config;
 using Vintagestory.API.Common;
 using Vintagestory.API.Config;
 using Vintagestory.API.MathTools;
@@ -8,8 +9,11 @@ namespace FirstStepsTweaks.Commands
 {
     public static class UtilityCommands
     {
-        public static void Register(ICoreServerAPI api)
+        private static UtilityConfig utilityConfig = new UtilityConfig();
+        public static void Register(ICoreServerAPI api, FirstStepsTweaksConfig config)
         {
+            utilityConfig = config?.Utility ?? new UtilityConfig();
+
             api.ChatCommands
                 .Create("whosonline")
                 .WithDescription("Shows the current player list")
@@ -34,10 +38,10 @@ namespace FirstStepsTweaks.Commands
 
         private static string GetWindCategory(float wind)
         {
-            if (wind >= 0.85f) return "Hurricane";
-            if (wind >= 0.65f) return "Storm";
-            if (wind >= 0.45f) return "Strong Wind";
-            if (wind >= 0.25f) return "Breezy";
+            if (wind >= utilityConfig.HurricaneThreshold) return "Hurricane";
+            if (wind >= utilityConfig.StormThreshold) return "Storm";
+            if (wind >= utilityConfig.StrongWindThreshold) return "Strong Wind";
+            if (wind >= utilityConfig.BreezyThreshold) return "Breezy";
             return "Calm";
         }
 

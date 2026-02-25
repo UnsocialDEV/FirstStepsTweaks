@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using FirstStepsTweaks.Config;
 using Vintagestory.API.Common;
 using Vintagestory.API.Common.Entities;
 using Vintagestory.API.Config;
@@ -12,8 +13,12 @@ namespace FirstStepsTweaks.Commands
         private static readonly Dictionary<string, Vec3d> LastPositionsByPlayerUid =
             new Dictionary<string, Vec3d>();
 
-        public static void Register(ICoreServerAPI api)
+        private static TeleportConfig teleportConfig = new TeleportConfig();
+
+        public static void Register(ICoreServerAPI api, FirstStepsTweaksConfig config)
         {
+            teleportConfig = config?.Teleport ?? new TeleportConfig();
+
             api.ChatCommands
                 .Create("back")
                 .WithDescription("Teleport back to your last location")
@@ -67,7 +72,7 @@ namespace FirstStepsTweaks.Commands
             double startY = player.Entity.Pos.Y;
             double startZ = player.Entity.Pos.Z;
 
-            int secondsRemaining = 10;
+            int secondsRemaining = teleportConfig.WarmupSeconds;
             long listenerId = 0;
 
             listenerId = api.Event.RegisterGameTickListener((dt) =>
@@ -82,7 +87,7 @@ namespace FirstStepsTweaks.Commands
                 double dy = System.Math.Abs(player.Entity.Pos.Y - startY);
                 double dz = System.Math.Abs(player.Entity.Pos.Z - startZ);
 
-                if (dx > 0.1 || dy > 0.1 || dz > 0.1)
+                if (dx > teleportConfig.CancelMoveThreshold || dy > teleportConfig.CancelMoveThreshold || dz > teleportConfig.CancelMoveThreshold)
                 {
                     player.SendMessage(
                         GlobalConstants.InfoLogChatGroup,
@@ -120,7 +125,7 @@ namespace FirstStepsTweaks.Commands
 
                     api.Event.UnregisterGameTickListener(listenerId);
                 }
-            }, 1000);
+            }, teleportConfig.TickIntervalMs);
 
             return TextCommandResult.Success();
         }

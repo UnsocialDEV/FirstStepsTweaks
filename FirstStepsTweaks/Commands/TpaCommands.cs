@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using FirstStepsTweaks.Config;
 using Vintagestory.API.Common;
 using Vintagestory.API.Config;
 using Vintagestory.API.Server;
@@ -20,9 +21,12 @@ namespace FirstStepsTweaks.Commands
             new Dictionary<string, List<TpaRequest>>();
 
         private const string TpaDisabledKey = "fst_tpa_disabled";
+        private static TeleportConfig teleportConfig = new TeleportConfig();
 
-        public static void Register(ICoreServerAPI api)
+        public static void Register(ICoreServerAPI api, FirstStepsTweaksConfig config)
         {
+            teleportConfig = config?.Teleport ?? new TeleportConfig();
+
             api.ChatCommands.Create("tpa")
                 .WithArgs(api.ChatCommands.Parsers.Word("player"))
                 .RequiresPlayer()
@@ -135,7 +139,7 @@ namespace FirstStepsTweaks.Commands
                     "Your teleport request expired.",
                     EnumChatType.CommandError);
 
-            }, 180000);
+            }, teleportConfig.TpaExpireMs);
 
             caller.SendMessage(GlobalConstants.InfoLogChatGroup,
                 $"Teleport request sent to {target.PlayerName}.",
@@ -189,11 +193,11 @@ namespace FirstStepsTweaks.Commands
             double startY = requester.Entity.Pos.Y;
             double startZ = requester.Entity.Pos.Z;
 
-            int seconds = 10;
+            int seconds = teleportConfig.WarmupSeconds;
             long listenerId = 0;
 
             requester.SendMessage(GlobalConstants.InfoLogChatGroup,
-                "Teleporting in 10 seconds. Do not move.",
+                $"Teleporting in {teleportConfig.WarmupSeconds} seconds. Do not move.",
                 EnumChatType.Notification);
 
             listenerId = api.Event.RegisterGameTickListener(dt =>
@@ -208,7 +212,7 @@ namespace FirstStepsTweaks.Commands
                 double dy = Math.Abs(requester.Entity.Pos.Y - startY);
                 double dz = Math.Abs(requester.Entity.Pos.Z - startZ);
 
-                if (dx > 0.1 || dy > 0.1 || dz > 0.1)
+                if (dx > teleportConfig.CancelMoveThreshold || dy > teleportConfig.CancelMoveThreshold || dz > teleportConfig.CancelMoveThreshold)
                 {
                     requester.SendMessage(GlobalConstants.InfoLogChatGroup,
                         "Teleport cancelled because you moved.",
@@ -242,7 +246,7 @@ namespace FirstStepsTweaks.Commands
                     api.Event.UnregisterGameTickListener(listenerId);
                 }
 
-            }, 1000);
+            }, teleportConfig.TickIntervalMs);
         }
 
         private static TextCommandResult TpDeny(ICoreServerAPI api, TextCommandCallingArgs args)
