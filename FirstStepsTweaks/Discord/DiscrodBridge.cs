@@ -305,6 +305,8 @@ namespace FirstStepsTweaks.Discord
                         ? contentProp.GetString()
                         : "";
 
+                    content = SanitizeDiscordContentForGame(msg, content);
+
                     if (config.IgnoreEmptyDiscordMessages && string.IsNullOrWhiteSpace(content))
                     {
                         lastMessageId = id;
@@ -347,6 +349,48 @@ namespace FirstStepsTweaks.Discord
             {
                 api.Logger.Error($"[FirstStepsTweaks] Discord polling exception: {e.Message}");
             }
+        }
+
+        private string SanitizeDiscordContentForGame(JsonElement msg, string content)
+        {
+            if (string.IsNullOrWhiteSpace(content)) return content;
+
+            // Convert user mentions like <@123...> into @Username so they don't leak VS rich text markers.
+            if (msg.TryGetProperty("mentions", out var mentions) && mentions.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var mention in mentions.EnumerateArray())
+                {
+                    if (!mention.TryGetProperty("id", out var idProp))
+                        continue;
+
+                    string mentionId = idProp.GetString();
+                    if (string.IsNullOrWhiteSpace(mentionId))
+                        continue;
+
+                    string mentionName = null;
+
+                    if (mention.TryGetProperty("global_name", out var globalNameProp))
+                    {
+                        mentionName = globalNameProp.GetString();
+                    }
+
+                    if (string.IsNullOrWhiteSpace(mentionName) && mention.TryGetProperty("username", out var usernameProp))
+                    {
+                        mentionName = usernameProp.GetString();
+                    }
+
+                    mentionName ??= "user";
+
+                    content = content.Replace($"<@{mentionId}>", $"@{mentionName}");
+                    content = content.Replace($"<@!{mentionId}>", $"@{mentionName}");
+                }
+            }
+
+            // Remove any remaining Discord tag syntax (<#...>, <@&...>, custom emojis, etc.)
+            // so Vintage Story does not interpret angle-bracket content as formatting tags.
+            content = Regex.Replace(content, "<[^>]+>", string.Empty);
+
+            return content;
         }
     }
 }
