@@ -224,6 +224,7 @@ namespace FirstStepsTweaks.Commands
                 }
                 else
                 {
+                    BackCommands.RecordCurrentLocation(requester);
                     requester.Entity.TeleportToDouble(
                         target.Entity.Pos.X,
                         target.Entity.Pos.Y,

@@ -125,6 +125,7 @@ namespace FirstStepsTweaks.Commands
                 }
                 else
                 {
+                    BackCommands.RecordCurrentLocation(player);
                     player.Entity.TeleportToDouble(targetX, targetY, targetZ);
 
                     player.SendMessage(
