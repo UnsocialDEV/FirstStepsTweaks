@@ -6,6 +6,7 @@ using System.Globalization;
 using System.Linq;
 using System.Reflection;
 using Vintagestory.API.Common;
+using Vintagestory.API.Config;
 using Vintagestory.API.MathTools;
 using Vintagestory.API.Server;
 
@@ -138,7 +139,7 @@ namespace FirstStepsTweaks.Services
         private static void Send(IServerPlayer player, string message)
         {
             if (string.IsNullOrWhiteSpace(message)) return;
-            player.SendMessage(GlobalConstants.InfoLogChatGroup, message, EnumChatType.Notification);
+            player.SendIngameError("no_permission", message);
         }
 
         private readonly struct ClaimSnapshot

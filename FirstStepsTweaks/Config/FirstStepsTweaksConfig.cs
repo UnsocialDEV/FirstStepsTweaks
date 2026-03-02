@@ -106,7 +106,7 @@ namespace FirstStepsTweaks.Config
     public class LandClaimNotificationConfig
     {
         public int TickIntervalMs { get; set; } = 1000;
-        public string EnterMessage { get; set; } = "You entered {owner} land claim ({claim}).";
-        public string ExitMessage { get; set; } = "You left {owner} land claim ({claim}).";
+        public string EnterMessage { get; set; } = "You entered {owner} land claim.";
+        public string ExitMessage { get; set; } = "You left {owner} land claim.";
     }
 }
