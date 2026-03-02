@@ -22,6 +22,7 @@ namespace FirstStepsTweaks.Config
         public bool EnableHomeCommands { get; set; } = true;
         public bool EnableKitCommands { get; set; } = true;
         public bool EnableTpaCommands { get; set; } = true;
+        public bool EnableWarpCommands { get; set; } = true;
         public bool EnableUtilityCommands { get; set; } = true;
         public bool EnableCorpseService { get; set; } = true;
         public bool EnableCorpseAdminCommands { get; set; } = true;
