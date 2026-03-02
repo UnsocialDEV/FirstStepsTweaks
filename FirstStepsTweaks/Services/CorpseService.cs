@@ -320,6 +320,11 @@ namespace FirstStepsTweaks.Services
             if (owner != byPlayer.PlayerUID)
             {
                 byPlayer.SendMessage(
+                    GlobalConstants.InfoLogChatGroup,
+                    "This is not your grave.",
+                    EnumChatType.Notification
+                );
+                byPlayer.SendMessage(
                     GlobalConstants.GeneralChatGroup,
                     "This is not your grave.",
                     EnumChatType.Notification
