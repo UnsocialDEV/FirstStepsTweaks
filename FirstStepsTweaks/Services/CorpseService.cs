@@ -310,13 +310,16 @@ namespace FirstStepsTweaks.Services
             }
 
             string owner = tree.GetString("owner");
-            string ownerName = tree.GetString("ownerName");
-
-            NotifyCorpseOwner(byPlayer, owner, ownerName);
 
             // NON-OWNER: put it back and delete the drop
             if (owner != byPlayer.PlayerUID)
             {
+                byPlayer.SendMessage(
+                    GlobalConstants.GeneralChatGroup,
+                    "This is not your grave.",
+                    EnumChatType.Notification
+                );
+
                 // Put the grave block back immediately
                 if (graveBlockId != 0)
                 {
@@ -331,58 +334,6 @@ namespace FirstStepsTweaks.Services
                 return;
             }
 
-            // OWNER: graves are claimed on interaction, not by breaking.
-            byPlayer.SendMessage(
-                GlobalConstants.GeneralChatGroup,
-                "Interact with your corpse to claim it.",
-                EnumChatType.Notification
-            );
-
-            if (graveBlockId != 0)
-            {
-                PlaceGraveBlock(pos);
-            }
-
-            suppressDropPositions.Add(pos.Copy());
-            EnsureTrackedFromRaw(pos, raw);
-        }
-
-        public void OnBlockUsed(IServerPlayer byPlayer, BlockSelection blockSel)
-        {
-            if (byPlayer == null || blockSel == null) return;
-
-            BlockPos pos = blockSel.Position;
-            Block block = api.World.BlockAccessor.GetBlock(pos);
-            if (block == null || block.Code == null || block.Code.Path != GetGravePath()) return;
-
-            string key = $"deathbones-{pos.X}-{pos.Y}-{pos.Z}";
-            byte[] raw = api.WorldManager.SaveGame.GetData(key);
-
-            if (raw == null || raw.Length == 0)
-            {
-                TryRestoreEmergencyBackup(byPlayer, "missing grave data");
-                return;
-            }
-
-            TreeAttribute tree;
-            using (var ms = new MemoryStream(raw))
-            using (var reader = new BinaryReader(ms))
-            {
-                tree = new TreeAttribute();
-                tree.FromBytes(reader);
-            }
-
-            string owner = tree.GetString("owner");
-            string ownerName = tree.GetString("ownerName");
-
-            NotifyCorpseOwner(byPlayer, owner, ownerName);
-
-            if (owner != byPlayer.PlayerUID)
-            {
-                EnsureTrackedFromRaw(pos, raw);
-                return;
-            }
-
             // OWNER: restore items
             List<ItemStack> stacks = LoadInventoryFromTree(tree);
             if (stacks != null && stacks.Count > 0)
@@ -390,8 +341,8 @@ namespace FirstStepsTweaks.Services
                 GiveItemsBack(byPlayer, stacks);
             }
 
-            // Remove the grave block now that it has been claimed
-            api.World.BlockAccessor.SetBlock(0, pos);
+            // Remove the grave block (already broken, but keep consistent)
+            // (No need to set air; it is already air after DidBreakBlock)
 
             // Clear saved data (your build has no DeleteData)
             api.WorldManager.SaveGame.StoreData(key, new byte[0]);
@@ -406,27 +357,6 @@ namespace FirstStepsTweaks.Services
             suppressDropPositions.Add(pos.Copy());
 
             api.Logger.Warning($"[GRAVE] Restored grave at {pos}");
-        }
-
-        private void NotifyCorpseOwner(IServerPlayer byPlayer, string ownerUid, string ownerName)
-        {
-            string label = string.IsNullOrWhiteSpace(ownerName) ? ownerUid : ownerName;
-
-            if (ownerUid == byPlayer.PlayerUID)
-            {
-                byPlayer.SendMessage(
-                    GlobalConstants.GeneralChatGroup,
-                    $"This corpse belongs to you ({label}).",
-                    EnumChatType.Notification
-                );
-                return;
-            }
-
-            byPlayer.SendMessage(
-                GlobalConstants.GeneralChatGroup,
-                $"This corpse belongs to {label}.",
-                EnumChatType.Notification
-            );
         }
 
         private void GiveItemsBack(IServerPlayer player, List<ItemStack> stacks)
