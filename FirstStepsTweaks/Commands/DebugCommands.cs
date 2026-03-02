@@ -18,7 +18,7 @@ namespace FirstStepsTweaks.Commands
                 .Create("fsdebug")
                 .WithDescription("Debug command for First Steps dev")
                 .RequiresPlayer()
-                .RequiresPrivilege(Privilege.gamemode)
+                .RequiresPrivilege(Privilege.controlserver)
                 .HandleWith(args => fsDebug(api, args));
         }
 
