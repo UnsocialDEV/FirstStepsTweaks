@@ -22,25 +22,32 @@ namespace FirstStepsTweaks.Commands
                 .Create("setwarp")
                 .WithDescription("Set a named warp at your current location")
                 .RequiresPlayer()
-                .RequiresPrivilege(Privilege.chat)
+                .RequiresPrivilege(Privilege.controlserver)
                 .WithArgs(api.ChatCommands.Parsers.Word("name"))
                 .HandleWith(args => SetWarp(api, args));
 
-            var warpCommand = api.ChatCommands
-                .Create("warp")
-                .WithDescription("Teleport to a named warp, or list all warps")
+            api.ChatCommands
+                .Create("delwarp")
+                .WithDescription("Delete a named warp")
                 .RequiresPlayer()
-                .RequiresPrivilege(Privilege.chat);
+                .RequiresPrivilege(Privilege.controlserver)
+                .WithArgs(api.ChatCommands.Parsers.Word("name"))
+                .HandleWith(args => DelWarp(api, args));
 
-            warpCommand
+            api.ChatCommands
+                .Create("warp")
+                .WithDescription("Teleport to a named warp")
+                .RequiresPlayer()
+                .RequiresPrivilege(Privilege.chat)
                 .WithArgs(api.ChatCommands.Parsers.Word("name"))
                 .HandleWith(args => WarpTo(api, args));
 
-            warpCommand
-                .BeginSubCommand("list")
-                    .WithDescription("List all available warps")
-                    .HandleWith(args => ListWarps(api, args))
-                .EndSubCommand();
+            api.ChatCommands
+                .Create("warps")
+                .WithDescription("List all available warps")
+                .RequiresPlayer()
+                .RequiresPrivilege(Privilege.chat)
+                .HandleWith(args => ListWarps(api, args));
         }
 
         private static TextCommandResult SetWarp(ICoreServerAPI api, TextCommandCallingArgs args)
@@ -63,6 +70,29 @@ namespace FirstStepsTweaks.Commands
 
             string action = updated ? "updated" : "set";
             player.SendMessage(GlobalConstants.InfoLogChatGroup, $"Warp '{warpName}' {action}.", EnumChatType.CommandSuccess);
+            return TextCommandResult.Success();
+        }
+
+        private static TextCommandResult DelWarp(ICoreServerAPI api, TextCommandCallingArgs args)
+        {
+            IServerPlayer player = (IServerPlayer)args.Caller.Player;
+            string warpName = NormalizeWarpName((string)args[0]);
+
+            if (string.IsNullOrWhiteSpace(warpName))
+            {
+                player.SendMessage(GlobalConstants.InfoLogChatGroup, "Warp name cannot be empty.", EnumChatType.CommandError);
+                return TextCommandResult.Success();
+            }
+
+            Dictionary<string, double[]> warps = LoadWarps(api);
+            if (!warps.Remove(warpName))
+            {
+                player.SendMessage(GlobalConstants.InfoLogChatGroup, $"Warp '{warpName}' does not exist.", EnumChatType.CommandError);
+                return TextCommandResult.Success();
+            }
+
+            SaveWarps(api, warps);
+            player.SendMessage(GlobalConstants.InfoLogChatGroup, $"Warp '{warpName}' deleted.", EnumChatType.CommandSuccess);
             return TextCommandResult.Success();
         }
 
