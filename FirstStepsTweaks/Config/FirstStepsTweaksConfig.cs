@@ -6,6 +6,7 @@ namespace FirstStepsTweaks.Config
     {
         public FeatureToggles Features { get; set; } = new FeatureToggles();
         public TeleportConfig Teleport { get; set; } = new TeleportConfig();
+        public RtpConfig Rtp { get; set; } = new RtpConfig();
         public JoinConfig Join { get; set; } = new JoinConfig();
         public DiscordCommandConfig DiscordCommand { get; set; } = new DiscordCommandConfig();
         public KitConfig Kits { get; set; } = new KitConfig();
@@ -24,6 +25,7 @@ namespace FirstStepsTweaks.Config
         public bool EnableKitCommands { get; set; } = true;
         public bool EnableTpaCommands { get; set; } = true;
         public bool EnableWarpCommands { get; set; } = true;
+        public bool EnableRtpCommand { get; set; } = true;
         public bool EnableUtilityCommands { get; set; } = true;
         public bool EnableCorpseService { get; set; } = true;
         public bool EnableCorpseAdminCommands { get; set; } = true;
@@ -37,6 +39,16 @@ namespace FirstStepsTweaks.Config
         public double CancelMoveThreshold { get; set; } = 0.1;
         public int TickIntervalMs { get; set; } = 1000;
         public int TpaExpireMs { get; set; } = 180000;
+    }
+
+    public class RtpConfig
+    {
+        public int MinRadius { get; set; } = 256;
+        public int MaxRadius { get; set; } = 2048;
+        public int MaxAttempts { get; set; } = 24;
+        public int CooldownSeconds { get; set; } = 300;
+        public bool UsePlayerPositionAsCenter { get; set; } = true;
+        public bool UseWarmup { get; set; } = true;
     }
 
     public class JoinConfig

@@ -53,6 +53,7 @@ namespace FirstStepsTweaks
             if (config.Features.EnableKitCommands) KitCommands.Register(api, config);
             if (config.Features.EnableTpaCommands) TpaCommands.Register(api, config);
             if (config.Features.EnableWarpCommands) WarpCommands.Register(api, config);
+            if (config.Features.EnableRtpCommand) RtpCommands.Register(api, config);
             if (config.Features.EnableUtilityCommands) UtilityCommands.Register(api, config);
             if (config.Features.EnableCorpseAdminCommands && corpseService != null)
             {
