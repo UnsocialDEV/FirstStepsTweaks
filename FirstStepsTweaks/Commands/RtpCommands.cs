@@ -84,6 +84,7 @@ namespace FirstStepsTweaks.Commands
             int attempts = Math.Max(1, rtpConfig.MaxAttempts);
             int minRadius = Math.Max(0, rtpConfig.MinRadius);
             int maxRadius = Math.Max(minRadius, rtpConfig.MaxRadius);
+            int horizontalChecksPerAttempt = 4;
 
             double centerX = rtpConfig.UsePlayerPositionAsCenter ? player.Entity.Pos.X : 0;
             double centerZ = rtpConfig.UsePlayerPositionAsCenter ? player.Entity.Pos.Z : 0;
@@ -93,12 +94,39 @@ namespace FirstStepsTweaks.Commands
                 double angle = Random.NextDouble() * Math.PI * 2;
                 double distance = minRadius + (Random.NextDouble() * (maxRadius - minRadius));
 
-                int x = (int)Math.Round(centerX + Math.Cos(angle) * distance);
-                int z = (int)Math.Round(centerZ + Math.Sin(angle) * distance);
-                int y = api.World.BlockAccessor.GetTerrainMapheightAt(new BlockPos(x, 0, z)) + 1;
+                int baseX = (int)Math.Round(centerX + Math.Cos(angle) * distance);
+                int baseZ = (int)Math.Round(centerZ + Math.Sin(angle) * distance);
 
-                if (y <= 1) continue;
+                for (int sample = 0; sample < horizontalChecksPerAttempt; sample++)
+                {
+                    // Try a tiny local spread around the sampled point so one tree/cave column does not waste the whole attempt.
+                    int x = baseX + Random.Next(-4, 5);
+                    int z = baseZ + Random.Next(-4, 5);
+                    Vec3d safeDestination = FindSafeDestinationInColumn(api, x, z);
+                    if (safeDestination != null)
+                    {
+                        return safeDestination;
+                    }
+                }
+            }
 
+            return null;
+        }
+
+        private static Vec3d FindSafeDestinationInColumn(ICoreServerAPI api, int x, int z)
+        {
+            int terrainHeight = api.World.BlockAccessor.GetTerrainMapheightAt(new BlockPos(x, 0, z));
+            if (terrainHeight <= 1)
+            {
+                return null;
+            }
+
+            // Terrain map height can hit treetops/leaves. Scan downward to find a true walkable surface.
+            int scanStartY = terrainHeight + 6;
+            int scanEndY = Math.Max(2, terrainHeight - 20);
+
+            for (int y = scanStartY; y >= scanEndY; y--)
+            {
                 BlockPos feetPos = new BlockPos(x, y, z);
                 BlockPos headPos = new BlockPos(x, y + 1, z);
                 BlockPos groundPos = new BlockPos(x, y - 1, z);
