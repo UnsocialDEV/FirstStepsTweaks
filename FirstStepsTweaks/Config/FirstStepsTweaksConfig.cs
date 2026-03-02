@@ -11,6 +11,7 @@ namespace FirstStepsTweaks.Config
         public KitConfig Kits { get; set; } = new KitConfig();
         public UtilityConfig Utility { get; set; } = new UtilityConfig();
         public CorpseConfig Corpse { get; set; } = new CorpseConfig();
+        public LandClaimNotificationConfig LandClaims { get; set; } = new LandClaimNotificationConfig();
     }
 
     public class FeatureToggles
@@ -27,6 +28,7 @@ namespace FirstStepsTweaks.Config
         public bool EnableCorpseService { get; set; } = true;
         public bool EnableCorpseAdminCommands { get; set; } = true;
         public bool EnableJoinBroadcasts { get; set; } = true;
+        public bool EnableLandClaimNotifications { get; set; } = true;
     }
 
     public class TeleportConfig
@@ -99,5 +101,12 @@ namespace FirstStepsTweaks.Config
         public string GraveBlockCode { get; set; } = "game:figurehead-skull";
         public int DropCleanupTickMs { get; set; } = 50;
         public int EnforceGraveTickMs { get; set; } = 200;
+    }
+
+    public class LandClaimNotificationConfig
+    {
+        public int TickIntervalMs { get; set; } = 1000;
+        public string EnterMessage { get; set; } = "You entered {owner} land claim ({claim}).";
+        public string ExitMessage { get; set; } = "You left {owner} land claim ({claim}).";
     }
 }

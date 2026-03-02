@@ -12,6 +12,7 @@ namespace FirstStepsTweaks
         private DiscordBridge discord;
         private JoinService joinService;
         private CorpseService corpseService;
+        private LandClaimNotificationService landClaimNotificationService;
 
         public override void StartServerSide(ICoreServerAPI api)
         {
@@ -36,6 +37,11 @@ namespace FirstStepsTweaks
             if (config.Features.EnableJoinBroadcasts)
             {
                 api.Event.PlayerJoin += joinService.OnPlayerJoin;
+            }
+
+            if (config.Features.EnableLandClaimNotifications)
+            {
+                landClaimNotificationService = new LandClaimNotificationService(api, config);
             }
 
             api.Event.PlayerChat += discord.OnPlayerChat;
