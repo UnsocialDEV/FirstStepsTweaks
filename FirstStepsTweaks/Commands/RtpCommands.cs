@@ -6,7 +6,7 @@ using Vintagestory.API.Config;
 using Vintagestory.API.MathTools;
 using Vintagestory.API.Server;
 
-/* NOT FINISHED!!!!!!!!!!
+/* ***NOT IMPLEMENTED***
  * This one is a bit fucky, doesnt seem to want to work if you change the min/max radius
  * tbh, i dont even know if i want to implement it anyway
  */
