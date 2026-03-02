@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Reflection;
 using Vintagestory.API.Common;
 using Vintagestory.API.Config;
 using Vintagestory.API.Datastructures;
@@ -25,6 +26,12 @@ namespace FirstStepsTweaks.Discord
         private const string DiscordLastIdKey = "fst_discord_lastmsgid";
         private string lastMessageId;
 
+        private readonly SemaphoreSlim worldUpdateLock = new SemaphoreSlim(1, 1);
+        private bool worldStateInitialized;
+        private int lastDayNumber;
+        private string lastSeasonName;
+        private bool? lastTemporalStormActive;
+
         public DiscordBridge(ICoreServerAPI api)
         {
             this.api = api;
@@ -41,6 +48,12 @@ namespace FirstStepsTweaks.Discord
             if (IsConfigured() && config.RelayDiscordToGame)
             {
                 api.Event.RegisterGameTickListener(OnDiscordPollTick, config.PollMs);
+            }
+
+            if (IsConfigured() && config.RelayGameToDiscord && config.RelayWorldUpdates)
+            {
+                int pollMs = Math.Max(1000, config.WorldUpdatePollMs);
+                api.Event.RegisterGameTickListener(OnWorldUpdateTick, pollMs);
             }
         }
 
@@ -261,6 +274,184 @@ namespace FirstStepsTweaks.Discord
             }
 
             _ = SendPlainToDiscord("Death", $"💀 {deathMessage}");
+        }
+
+        private async void OnWorldUpdateTick(float dt)
+        {
+            if (!await worldUpdateLock.WaitAsync(0)) return;
+
+            try
+            {
+                await CheckWorldUpdatesOnce();
+            }
+            catch (Exception e)
+            {
+                api.Logger.Error($"[FirstStepsTweaks] World update relay error: {e}");
+            }
+            finally
+            {
+                worldUpdateLock.Release();
+            }
+        }
+
+        private async Task CheckWorldUpdatesOnce()
+        {
+            if (!IsConfigured() || !config.RelayGameToDiscord || !config.RelayWorldUpdates) return;
+            if (api.World?.Calendar == null) return;
+
+            int dayNumber = (int)Math.Floor(api.World.Calendar.TotalDays);
+            string seasonName = ResolveSeasonName();
+            bool? temporalStormActive = ResolveTemporalStormActive();
+
+            if (!worldStateInitialized)
+            {
+                lastDayNumber = dayNumber;
+                lastSeasonName = seasonName;
+                lastTemporalStormActive = temporalStormActive;
+                worldStateInitialized = true;
+                return;
+            }
+
+            if (dayNumber != lastDayNumber)
+            {
+                _ = SendEmbedToDiscord(
+                    "World Update",
+                    $"🌅 A new day has begun (Day {dayNumber}).",
+                    0xFEE75C
+                );
+                lastDayNumber = dayNumber;
+            }
+
+            if (!string.IsNullOrWhiteSpace(seasonName) && !string.Equals(seasonName, lastSeasonName, StringComparison.Ordinal))
+            {
+                _ = SendEmbedToDiscord(
+                    "World Update",
+                    $"🍂 The season has changed to **{seasonName}**.",
+                    0x5865F2
+                );
+                lastSeasonName = seasonName;
+            }
+
+            if (temporalStormActive.HasValue && temporalStormActive != lastTemporalStormActive)
+            {
+                if (temporalStormActive.Value)
+                {
+                    _ = SendEmbedToDiscord(
+                        "World Update",
+                        "⛈️ A temporal storm has started.",
+                        0xED4245
+                    );
+                }
+                else
+                {
+                    _ = SendEmbedToDiscord(
+                        "World Update",
+                        "🌤️ The temporal storm has ended.",
+                        0x57F287
+                    );
+                }
+
+                lastTemporalStormActive = temporalStormActive;
+            }
+
+            await Task.CompletedTask;
+        }
+
+        private string ResolveSeasonName()
+        {
+            double seasonRel;
+
+            if (TryInvokeCalendarDouble("GetSeasonRel", api.World.Calendar.TotalDays, out seasonRel) ||
+                TryInvokeCalendarDouble("GetSeasonRel", (float)api.World.Calendar.TotalDays, out seasonRel) ||
+                TryGetNumericProperty(api.World.Calendar, "SeasonRel", out seasonRel) ||
+                TryGetNumericProperty(api.World.Calendar, "Season", out seasonRel))
+            {
+                return SeasonNameFromRelative(seasonRel);
+            }
+
+            return null;
+        }
+
+        private bool? ResolveTemporalStormActive()
+        {
+            if (TryGetBoolProperty(api.World, "TemporalStormActive", out bool worldStorm)) return worldStorm;
+            if (TryGetBoolProperty(api.World.Calendar, "TemporalStormActive", out bool calendarStorm)) return calendarStorm;
+            return null;
+        }
+
+        private string SeasonNameFromRelative(double seasonRel)
+        {
+            if (double.IsNaN(seasonRel) || double.IsInfinity(seasonRel)) return null;
+
+            double normalized = seasonRel % 1d;
+            if (normalized < 0) normalized += 1d;
+
+            if (normalized < 0.25d) return "Spring";
+            if (normalized < 0.5d) return "Summer";
+            if (normalized < 0.75d) return "Autumn";
+            return "Winter";
+        }
+
+        private bool TryGetNumericProperty(object instance, string propertyName, out double value)
+        {
+            value = default;
+            if (instance == null) return false;
+
+            PropertyInfo prop = instance.GetType().GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance);
+            if (prop == null) return false;
+
+            object raw = prop.GetValue(instance);
+            if (raw == null) return false;
+
+            try
+            {
+                value = Convert.ToDouble(raw);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private bool TryGetBoolProperty(object instance, string propertyName, out bool value)
+        {
+            value = default;
+            if (instance == null) return false;
+
+            PropertyInfo prop = instance.GetType().GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance);
+            if (prop == null || prop.PropertyType != typeof(bool)) return false;
+
+            object raw = prop.GetValue(instance);
+            if (raw is bool boolValue)
+            {
+                value = boolValue;
+                return true;
+            }
+
+            return false;
+        }
+
+        private bool TryInvokeCalendarDouble(string methodName, object arg, out double value)
+        {
+            value = default;
+            if (api.World?.Calendar == null) return false;
+
+            MethodInfo method = api.World.Calendar.GetType().GetMethod(methodName, BindingFlags.Public | BindingFlags.Instance, null, new[] { arg.GetType() }, null);
+            if (method == null) return false;
+
+            object result = method.Invoke(api.World.Calendar, new[] { arg });
+            if (result == null) return false;
+
+            try
+            {
+                value = Convert.ToDouble(result);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         // =========================================================
