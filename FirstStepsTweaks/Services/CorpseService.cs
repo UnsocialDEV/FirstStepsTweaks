@@ -676,13 +676,16 @@ namespace FirstStepsTweaks.Services
 
         private void PlaceGraveBlock(BlockPos pos, string ownerName, int blockId = 0)
         {
-            int idToPlace = blockId != 0 ? blockId : graveBlockId;
-            if (idToPlace == 0 || pos == null) return;
+            Block block = api.World.GetBlock(new AssetLocation("game:figurehead-skull"));
+            if (block == null) return;
 
-            api.World.BlockAccessor.SetBlock(idToPlace, pos);
-            TrySetBlockEntityName(pos, BuildGraveDisplayName(ownerName));
+            ItemStack stack = new ItemStack(block);
+            stack.Attributes.SetString("material", "larch");
 
+            api.World.BlockAccessor.SetBlock(block.BlockId, pos, stack);    
             api.World.BlockAccessor.MarkBlockDirty(pos);
+
+            TrySetBlockEntityName(pos, BuildGraveDisplayName(ownerName));
         }
     }
 }

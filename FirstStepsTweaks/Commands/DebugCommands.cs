@@ -26,11 +26,13 @@ namespace FirstStepsTweaks.Commands
         {
             IServerPlayer player = (IServerPlayer)args.Caller.Player;
 
-            player.SendMessage(
-                GlobalConstants.GeneralChatGroup,
-                "AllGroups",
-                EnumChatType.AllGroups
-                );
+            foreach (var block in api.World.Blocks)
+            {
+                if (block.Code.Path.StartsWith("figurehead-skull"))
+                {
+                    api.Logger.Notification(block.Code.ToString());
+                }
+            }
 
             return TextCommandResult.Success();
         }
