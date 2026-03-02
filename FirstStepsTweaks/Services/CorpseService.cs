@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Reflection;
 using FirstStepsTweaks.Config;
 using Vintagestory.API.Common;
 using Vintagestory.API.Common.Entities;
@@ -96,7 +95,7 @@ namespace FirstStepsTweaks.Services
 
                     if (raw != null && raw.Length > 0)
                     {
-                        PlaceGraveBlock(pos, record.OwnerName);
+                        PlaceGraveBlock(pos);
                     }
                 }
             }
@@ -280,7 +279,7 @@ namespace FirstStepsTweaks.Services
             Block bones = api.World.GetBlock(new AssetLocation(corpseConfig.GraveBlockCode));
             if (bones == null) return;
 
-            PlaceGraveBlock(pos, ownerName, bones.BlockId);
+            PlaceGraveBlock(pos);
         }
         public void OnBlockBroken(IServerPlayer byPlayer, int oldblockId, BlockSelection blockSel)
         {
@@ -324,7 +323,7 @@ namespace FirstStepsTweaks.Services
                 // Put the grave block back immediately
                 if (graveBlockId != 0)
                 {
-                    PlaceGraveBlock(pos, tree.GetString("ownerName"));
+                    PlaceGraveBlock(pos);
                 }
 
                 // Remove the dropped skull entity near this position
@@ -627,54 +626,7 @@ namespace FirstStepsTweaks.Services
             return new AssetLocation(corpseConfig.GraveBlockCode).Path;
         }
 
-        private string BuildGraveDisplayName(string ownerName)
-        {
-            if (string.IsNullOrWhiteSpace(ownerName))
-            {
-                return "Grave";
-            }
-
-            return $"{ownerName} Grave";
-        }
-
-        private void TrySetBlockEntityName(BlockPos pos, string displayName)
-        {
-            var blockEntity = api.World.BlockAccessor.GetBlockEntity(pos);
-            if (blockEntity == null) return;
-
-            Type beType = blockEntity.GetType();
-
-            PropertyInfo nameProperty = beType.GetProperty("Name");
-            if (nameProperty != null && nameProperty.CanWrite && nameProperty.PropertyType == typeof(string))
-            {
-                nameProperty.SetValue(blockEntity, displayName);
-            }
-
-            MethodInfo setNameMethod = beType.GetMethod("SetName", new[] { typeof(string) });
-            setNameMethod?.Invoke(blockEntity, new object[] { displayName });
-
-            PropertyInfo[] attributeProperties =
-            {
-                beType.GetProperty("Attributes"),
-                beType.GetProperty("TreeAttributes"),
-                beType.GetProperty("WatchedAttributes")
-            };
-
-            for (int i = 0; i < attributeProperties.Length; i++)
-            {
-                if (attributeProperties[i]?.GetValue(blockEntity) is ITreeAttribute tree)
-                {
-                    tree.SetString("name", displayName);
-                    tree.SetString("displayName", displayName);
-                    tree.SetString("label", displayName);
-                    tree.SetString("text", displayName);
-                }
-            }
-
-            blockEntity.MarkDirty(true);
-        }
-
-        private void PlaceGraveBlock(BlockPos pos, string ownerName, int blockId = 0)
+        private void PlaceGraveBlock(BlockPos pos)
         {
             Block block = api.World.GetBlock(new AssetLocation("game:figurehead-skull"));
             if (block == null) return;
@@ -685,7 +637,6 @@ namespace FirstStepsTweaks.Services
             api.World.BlockAccessor.SetBlock(block.BlockId, pos, stack);    
             api.World.BlockAccessor.MarkBlockDirty(pos);
 
-            TrySetBlockEntityName(pos, BuildGraveDisplayName(ownerName));
         }
     }
 }
