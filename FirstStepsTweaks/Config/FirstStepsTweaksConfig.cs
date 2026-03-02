@@ -11,7 +11,6 @@ namespace FirstStepsTweaks.Config
         public KitConfig Kits { get; set; } = new KitConfig();
         public UtilityConfig Utility { get; set; } = new UtilityConfig();
         public CorpseConfig Corpse { get; set; } = new CorpseConfig();
-        public ChiselTransferConfig ChiselTransfer { get; set; } = new ChiselTransferConfig();
     }
 
     public class FeatureToggles
@@ -28,7 +27,6 @@ namespace FirstStepsTweaks.Config
         public bool EnableCorpseService { get; set; } = true;
         public bool EnableCorpseAdminCommands { get; set; } = true;
         public bool EnableJoinBroadcasts { get; set; } = true;
-        public bool EnableChiselTransferCommands { get; set; } = true;
     }
 
     public class TeleportConfig

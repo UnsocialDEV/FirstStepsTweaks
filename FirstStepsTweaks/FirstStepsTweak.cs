@@ -1,5 +1,4 @@
-﻿using FirstStepsTweaks.ChiselTransfer;
-using FirstStepsTweaks.Commands;
+﻿using FirstStepsTweaks.Commands;
 using FirstStepsTweaks.Config;
 using FirstStepsTweaks.Discord;
 using FirstStepsTweaks.Services;
@@ -52,11 +51,6 @@ namespace FirstStepsTweaks
             if (config.Features.EnableCorpseAdminCommands && corpseService != null)
             {
                 CorpseAdminCommands.Register(api, corpseService);
-            }
-
-            if (config.Features.EnableChiselTransferCommands)
-            {
-                ChiselCommandHandlers.Register(api, config);
             }
         }
 
