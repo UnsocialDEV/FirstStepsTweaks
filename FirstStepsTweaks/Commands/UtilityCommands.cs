@@ -1,4 +1,6 @@
-﻿using System.Linq;
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
 using FirstStepsTweaks.Config;
 using Vintagestory.API.Common;
 using Vintagestory.API.Config;
@@ -78,15 +80,29 @@ namespace FirstStepsTweaks.Commands
                 return TextCommandResult.Success();
             }
 
-            string playerList = string.Join(", ",
-                players
-                    .Cast<IServerPlayer>()
-                    .Select(p => $"{p.PlayerName} ({p.Ping}ms)")
-            );
+            var adminNames = new HashSet<string>(utilityConfig.AdminPlayerNames ?? new List<string>(), StringComparer.OrdinalIgnoreCase);
+
+            var sortedPlayers = players
+                .Cast<IServerPlayer>()
+                .OrderByDescending(p => adminNames.Contains(p.PlayerName))
+                .ThenBy(p => p.PlayerName, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            string[] lines = sortedPlayers
+                .Select((player, index) =>
+                {
+                    bool isAdmin = adminNames.Contains(player.PlayerName);
+                    string adminTag = isAdmin ? " [ADMIN]" : string.Empty;
+                    return $"{index + 1}. {player.PlayerName}{adminTag} ({player.Ping}ms)";
+                })
+                .ToArray();
+
+            string header = $"Online players ({sortedPlayers.Count}):";
+            string playerList = string.Join(Environment.NewLine, lines);
 
             caller.SendMessage(
                 GlobalConstants.InfoLogChatGroup,
-                $"Online players ({players.Length}): {playerList}",
+                $"{header}{Environment.NewLine}{playerList}",
                 EnumChatType.CommandSuccess
             );
 
