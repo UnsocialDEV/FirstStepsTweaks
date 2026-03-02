@@ -54,7 +54,7 @@ namespace FirstStepsTweaks.Config
     public class JoinConfig
     {
         public string FirstJoinMessage { get; set; } = "Welcome {player} to the server, this is their first time joining!";
-        public string ReturningJoinMessage { get; set; } = "Welcome back {player}!";
+        public string ReturningJoinMessage { get; set; } = "Welcome back {player}! It's been {days} in-game day(s) since your last visit.";
     }
 
     public class DiscordCommandConfig
