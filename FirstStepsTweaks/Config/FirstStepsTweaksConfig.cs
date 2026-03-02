@@ -90,6 +90,7 @@ namespace FirstStepsTweaks.Config
         public float StormThreshold { get; set; } = 0.65f;
         public float StrongWindThreshold { get; set; } = 0.45f;
         public float BreezyThreshold { get; set; } = 0.25f;
+        public List<string> AdminPlayerNames { get; set; } = new List<string>();
     }
 
     public class CorpseConfig
