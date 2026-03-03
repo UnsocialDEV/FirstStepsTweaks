@@ -282,7 +282,7 @@ namespace FirstStepsTweaks.Discord
 
             try
             {
-                await CheckWorldUpdatesOnce();
+                CheckWorldUpdatesOnce();
             }
             catch (Exception e)
             {
@@ -294,7 +294,7 @@ namespace FirstStepsTweaks.Discord
             }
         }
 
-        private async Task CheckWorldUpdatesOnce()
+        private void CheckWorldUpdatesOnce()
         {
             if (!IsConfigured() || !config.RelayGameToDiscord || !config.RelayWorldUpdates) return;
             if (api.World?.Calendar == null) return;
@@ -334,34 +334,44 @@ namespace FirstStepsTweaks.Discord
 
             if (temporalStormActive.HasValue && temporalStormActive != lastTemporalStormActive)
             {
-                if (temporalStormActive.Value)
-                {
-                    _ = SendEmbedToDiscord(
-                        "World Update",
-                        "⛈️ A temporal storm has started.",
-                        0xED4245
-                    );
-                }
-                else
-                {
-                    _ = SendEmbedToDiscord(
-                        "World Update",
-                        "🌤️ The temporal storm has ended.",
-                        0x57F287
-                    );
-                }
+                _ = SendEmbedToDiscord(
+                    "World Update",
+                    temporalStormActive.Value
+                        ? "⛈️ A temporal storm has started."
+                        : "🌤️ The temporal storm has ended.",
+                    temporalStormActive.Value ? 0xED4245 : 0x57F287
+                );
 
                 lastTemporalStormActive = temporalStormActive;
             }
-
-            await Task.CompletedTask;
         }
 
         private string ResolveSeasonName()
         {
-            double seasonRel;
+            if (TryGetStringProperty(api.World.Calendar, "SeasonName", out string seasonName) && !string.IsNullOrWhiteSpace(seasonName))
+            {
+                return seasonName;
+            }
 
-            if (TryInvokeCalendarDouble("GetSeasonRel", api.World.Calendar.TotalDays, out seasonRel) ||
+            if (TryGetStringProperty(api.World.Calendar, "Season", out seasonName) && !string.IsNullOrWhiteSpace(seasonName))
+            {
+                return seasonName;
+            }
+
+            if (TryGetNumericProperty(api.World.Calendar, "Month", out double monthRaw))
+            {
+                int month = (int)Math.Floor(monthRaw);
+                int monthsPerYear = 12;
+                if (TryGetNumericProperty(api.World.Calendar, "MonthsPerYear", out double monthsPerYearRaw) && monthsPerYearRaw > 0)
+                {
+                    monthsPerYear = Math.Max(1, (int)Math.Round(monthsPerYearRaw));
+                }
+
+                return SeasonNameFromMonth(month, monthsPerYear);
+            }
+
+            if (TryInvokeCalendarDoubleNoArgs("GetSeasonRel", out double seasonRel) ||
+                TryInvokeCalendarDouble("GetSeasonRel", api.World.Calendar.TotalDays, out seasonRel) ||
                 TryInvokeCalendarDouble("GetSeasonRel", (float)api.World.Calendar.TotalDays, out seasonRel) ||
                 TryGetNumericProperty(api.World.Calendar, "SeasonRel", out seasonRel) ||
                 TryGetNumericProperty(api.World.Calendar, "Season", out seasonRel))
@@ -376,14 +386,74 @@ namespace FirstStepsTweaks.Discord
         {
             if (TryGetBoolProperty(api.World, "TemporalStormActive", out bool worldStorm)) return worldStorm;
             if (TryGetBoolProperty(api.World.Calendar, "TemporalStormActive", out bool calendarStorm)) return calendarStorm;
+
+            if (TryGetStormFlagFromNestedObject(api.World, "TemporalStorm", out bool worldNested)) return worldNested;
+            if (TryGetStormFlagFromNestedObject(api.World, "WeatherSystem", out bool weatherNested)) return weatherNested;
+            if (TryGetStormFlagFromNestedObject(api.World.Calendar, "TemporalStorm", out bool calendarNested)) return calendarNested;
+
+            if (TryGetNumericProperty(api.World, "TemporalStormStrength", out double worldStrength)) return worldStrength > 0;
+            if (TryGetNumericProperty(api.World.Calendar, "TemporalStormStrength", out double calendarStrength)) return calendarStrength > 0;
+
             return null;
+        }
+
+        private bool TryGetStormFlagFromNestedObject(object instance, string propertyName, out bool value)
+        {
+            value = default;
+            if (instance == null) return false;
+
+            PropertyInfo prop = instance.GetType().GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance);
+            if (prop == null) return false;
+
+            object nested = prop.GetValue(instance);
+            if (nested == null) return false;
+
+            string[] activePropertyNames = { "IsActive", "Active", "Running", "IsRunning", "NowActive" };
+            foreach (string name in activePropertyNames)
+            {
+                if (TryGetBoolProperty(nested, name, out bool nestedValue))
+                {
+                    value = nestedValue;
+                    return true;
+                }
+            }
+
+            if (TryGetNumericProperty(nested, "Strength", out double strength))
+            {
+                value = strength > 0;
+                return true;
+            }
+
+            return false;
+        }
+
+        private string SeasonNameFromMonth(int month, int monthsPerYear)
+        {
+            if (monthsPerYear <= 0) monthsPerYear = 12;
+
+            int normalizedMonth = month % monthsPerYear;
+            if (normalizedMonth < 0) normalizedMonth += monthsPerYear;
+
+            int seasonIndex = (normalizedMonth * 4) / monthsPerYear;
+            switch (seasonIndex)
+            {
+                case 0: return "Spring";
+                case 1: return "Summer";
+                case 2: return "Autumn";
+                default: return "Winter";
+            }
         }
 
         private string SeasonNameFromRelative(double seasonRel)
         {
             if (double.IsNaN(seasonRel) || double.IsInfinity(seasonRel)) return null;
 
-            double normalized = seasonRel % 1d;
+            // Some API surfaces return [0..1), others [0..4).
+            double normalized = seasonRel <= 1d
+                ? seasonRel
+                : seasonRel / 4d;
+
+            normalized %= 1d;
             if (normalized < 0) normalized += 1d;
 
             if (normalized < 0.25d) return "Spring";
@@ -414,6 +484,18 @@ namespace FirstStepsTweaks.Discord
             }
         }
 
+        private bool TryGetStringProperty(object instance, string propertyName, out string value)
+        {
+            value = null;
+            if (instance == null) return false;
+
+            PropertyInfo prop = instance.GetType().GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance);
+            if (prop == null || prop.PropertyType != typeof(string)) return false;
+
+            value = prop.GetValue(instance) as string;
+            return value != null;
+        }
+
         private bool TryGetBoolProperty(object instance, string propertyName, out bool value)
         {
             value = default;
@@ -441,6 +523,28 @@ namespace FirstStepsTweaks.Discord
             if (method == null) return false;
 
             object result = method.Invoke(api.World.Calendar, new[] { arg });
+            if (result == null) return false;
+
+            try
+            {
+                value = Convert.ToDouble(result);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private bool TryInvokeCalendarDoubleNoArgs(string methodName, out double value)
+        {
+            value = default;
+            if (api.World?.Calendar == null) return false;
+
+            MethodInfo method = api.World.Calendar.GetType().GetMethod(methodName, BindingFlags.Public | BindingFlags.Instance, null, Type.EmptyTypes, null);
+            if (method == null) return false;
+
+            object result = method.Invoke(api.World.Calendar, Array.Empty<object>());
             if (result == null) return false;
 
             try
