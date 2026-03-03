@@ -1094,6 +1094,7 @@ namespace FirstStepsTweaks.Services
 
             ItemStack stack = new ItemStack(block);
             stack.Attributes.SetString("type", "gravestone-3");
+            stack.Attributes.SetString("name", "debugged");
 
             api.World.BlockAccessor.SetBlock(block.BlockId, pos, stack);    
             api.World.BlockAccessor.MarkBlockDirty(pos);
