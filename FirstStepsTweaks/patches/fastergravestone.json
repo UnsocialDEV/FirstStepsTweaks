@@ -1,0 +1,14 @@
+[
+  {
+    "op": "addmerge",
+    "file": "game:blocktypes/clutter.json",
+    "path": "/variantgroups",
+    "value": []
+  },
+  {
+    "op": "replace",
+    "file": "game:blocktypes/clutter.json",
+    "path": "/resistanceByType/gravestone-3",
+    "value": 0.3
+  }
+]
