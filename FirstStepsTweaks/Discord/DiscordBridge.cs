@@ -30,8 +30,6 @@ namespace FirstStepsTweaks.Discord
         private bool worldStateInitialized;
         private int lastDayNumber;
         private string lastSeasonName;
-        private bool? lastTemporalStormActive;
-        private bool temporalStormDetectionWarned;
 
         public DiscordBridge(ICoreServerAPI api)
         {
@@ -302,13 +300,11 @@ namespace FirstStepsTweaks.Discord
 
             int dayNumber = (int)Math.Floor(api.World.Calendar.TotalDays);
             string seasonName = ResolveSeasonName();
-            bool? temporalStormActive = ResolveTemporalStormActive();
 
             if (!worldStateInitialized)
             {
                 lastDayNumber = dayNumber;
                 lastSeasonName = seasonName;
-                lastTemporalStormActive = temporalStormActive;
                 worldStateInitialized = true;
                 return;
             }
@@ -331,19 +327,6 @@ namespace FirstStepsTweaks.Discord
                     0x5865F2
                 );
                 lastSeasonName = seasonName;
-            }
-
-            if (temporalStormActive.HasValue && temporalStormActive != lastTemporalStormActive)
-            {
-                _ = SendEmbedToDiscord(
-                    "World Update",
-                    temporalStormActive.Value
-                        ? "⛈️ A temporal storm has started."
-                        : "🌤️ The temporal storm has ended.",
-                    temporalStormActive.Value ? 0xED4245 : 0x57F287
-                );
-
-                lastTemporalStormActive = temporalStormActive;
             }
         }
 
@@ -383,148 +366,6 @@ namespace FirstStepsTweaks.Discord
             return null;
         }
 
-        private bool? ResolveTemporalStormActive()
-        {
-            if (TryGetBoolProperty(api.World, "TemporalStormActive", out bool worldStorm)) return worldStorm;
-            if (TryGetBoolProperty(api.World.Calendar, "TemporalStormActive", out bool calendarStorm)) return calendarStorm;
-
-            if (TryGetStormFlagFromNestedObject(api.World, "TemporalStorm", out bool worldNested)) return worldNested;
-            if (TryGetStormFlagFromNestedObject(api.World, "WeatherSystem", out bool weatherNested)) return weatherNested;
-            if (TryGetStormFlagFromNestedObject(api.World.Calendar, "TemporalStorm", out bool calendarNested)) return calendarNested;
-
-            if (TryGetNumericProperty(api.World, "TemporalStormStrength", out double worldStrength)) return worldStrength > 0;
-            if (TryGetNumericProperty(api.World.Calendar, "TemporalStormStrength", out double calendarStrength)) return calendarStrength > 0;
-
-            if (TryFindTemporalStormState(api.World, 0, out bool discoveredState)) return discoveredState;
-            if (TryFindTemporalStormState(api.World?.Calendar, 0, out discoveredState)) return discoveredState;
-
-            if (!temporalStormDetectionWarned)
-            {
-                temporalStormDetectionWarned = true;
-                api.Logger.Warning("[FirstStepsTweaks] Unable to resolve temporal storm state from known API surfaces; storm relay messages are disabled until detectable state is found.");
-            }
-
-            return null;
-        }
-
-        private bool TryGetStormFlagFromNestedObject(object instance, string propertyName, out bool value)
-        {
-            value = default;
-            if (instance == null) return false;
-
-            PropertyInfo prop = instance.GetType().GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance);
-            if (prop == null) return false;
-
-            object nested = prop.GetValue(instance);
-            if (nested == null) return false;
-
-            string[] activePropertyNames = { "IsActive", "Active", "Running", "IsRunning", "NowActive" };
-            foreach (string name in activePropertyNames)
-            {
-                if (TryGetBoolProperty(nested, name, out bool nestedValue))
-                {
-                    value = nestedValue;
-                    return true;
-                }
-            }
-
-            if (TryGetNumericProperty(nested, "Strength", out double strength))
-            {
-                value = strength > 0;
-                return true;
-            }
-
-            return false;
-        }
-
-        private bool TryFindTemporalStormState(object instance, int depth, out bool value)
-        {
-            value = default;
-            if (instance == null || depth > 2) return false;
-
-            Type type = instance.GetType();
-            PropertyInfo[] properties;
-
-            try
-            {
-                properties = type.GetProperties(BindingFlags.Public | BindingFlags.Instance);
-            }
-            catch
-            {
-                return false;
-            }
-
-            foreach (PropertyInfo prop in properties)
-            {
-                if (!prop.CanRead) continue;
-
-                string propName = prop.Name ?? string.Empty;
-                string lowered = propName.ToLowerInvariant();
-                if (!lowered.Contains("storm") && !lowered.Contains("temporal")) continue;
-
-                object raw;
-                try
-                {
-                    raw = prop.GetValue(instance);
-                }
-                catch
-                {
-                    continue;
-                }
-
-                if (raw == null) continue;
-
-                if (raw is bool boolValue)
-                {
-                    value = boolValue;
-                    return true;
-                }
-
-                if (raw is string stringValue)
-                {
-                    string normalized = stringValue.Trim().ToLowerInvariant();
-                    if (normalized == "active" || normalized == "started" || normalized == "running")
-                    {
-                        value = true;
-                        return true;
-                    }
-
-                    if (normalized == "inactive" || normalized == "ended" || normalized == "stopped")
-                    {
-                        value = false;
-                        return true;
-                    }
-                }
-
-                if (TryConvertToDouble(raw, out double numericValue))
-                {
-                    value = numericValue > 0;
-                    return true;
-                }
-
-                if (TryGetStormFlagFromNestedObject(raw, "TemporalStorm", out bool nestedStorm))
-                {
-                    value = nestedStorm;
-                    return true;
-                }
-
-                if (TryGetStormFlagFromNestedObject(raw, "Storm", out nestedStorm))
-                {
-                    value = nestedStorm;
-                    return true;
-                }
-
-                if (TryFindTemporalStormState(raw, depth + 1, out bool deepValue))
-                {
-                    value = deepValue;
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
-
         private string SeasonNameFromMonth(int month, int monthsPerYear)
         {
             if (monthsPerYear <= 0) monthsPerYear = 12;
@@ -560,21 +401,6 @@ namespace FirstStepsTweaks.Discord
             return "Winter";
         }
 
-        private bool TryConvertToDouble(object raw, out double value)
-        {
-            value = default;
-
-            try
-            {
-                value = Convert.ToDouble(raw);
-                return true;
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
         private bool TryGetNumericProperty(object instance, string propertyName, out double value)
         {
             value = default;
@@ -607,24 +433,6 @@ namespace FirstStepsTweaks.Discord
 
             value = prop.GetValue(instance) as string;
             return value != null;
-        }
-
-        private bool TryGetBoolProperty(object instance, string propertyName, out bool value)
-        {
-            value = default;
-            if (instance == null) return false;
-
-            PropertyInfo prop = instance.GetType().GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance);
-            if (prop == null || prop.PropertyType != typeof(bool)) return false;
-
-            object raw = prop.GetValue(instance);
-            if (raw is bool boolValue)
-            {
-                value = boolValue;
-                return true;
-            }
-
-            return false;
         }
 
         private bool TryInvokeCalendarDouble(string methodName, object arg, out double value)
