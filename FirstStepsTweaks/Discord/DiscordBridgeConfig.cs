@@ -15,6 +15,8 @@ namespace FirstStepsTweaks.Discord
         public bool RelayGameToDiscord { get; set; } = true;
         public bool RelayDiscordToGame { get; set; } = true;
         public bool RelayJoinLeave = true;
+        public bool RelayWorldUpdates { get; set; } = true;
+        public int WorldUpdatePollMs { get; set; } = 5000;
 
         // Optional filters
         public bool IgnoreEmptyDiscordMessages { get; set; } = true;
