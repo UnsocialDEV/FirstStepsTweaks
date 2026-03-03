@@ -42,6 +42,7 @@ namespace FirstStepsTweaks.Services
         private bool suspendIndexPersistence;
         private int nextGraveId = 1;
         private int graveBlockId;
+        private readonly AssetLocation graveBlockCode;
         private readonly string gravePath;
         private readonly CorpseConfig corpseConfig;
 
@@ -49,9 +50,10 @@ namespace FirstStepsTweaks.Services
         {
             this.api = api;
             corpseConfig = config?.Corpse ?? new CorpseConfig();
-            gravePath = new AssetLocation(corpseConfig.GraveBlockCode).Path;
+            graveBlockCode = new AssetLocation(corpseConfig.GraveBlockCode);
+            gravePath = graveBlockCode.Path;
 
-            Block grave = api.World.GetBlock(new AssetLocation(corpseConfig.GraveBlockCode));
+            Block grave = api.World.GetBlock(graveBlockCode);
             graveBlockId = grave?.BlockId ?? 0;
 
             api.Event.RegisterGameTickListener(RemoveGraveDrops, corpseConfig.DropCleanupTickMs);
@@ -1061,14 +1063,10 @@ namespace FirstStepsTweaks.Services
 
         private void PlaceGraveBlock(BlockPos pos)
         {
-            Block block = api.World.GetBlock(new AssetLocation("game:clutter"));
+            Block block = api.World.GetBlock(graveBlockCode);
             if (block == null) return;
 
-            ItemStack stack = new ItemStack(block);
-            stack.Attributes.SetString("type", "gravestone-3");
-            stack.Attributes.SetString("name", "debugged");
-
-            api.World.BlockAccessor.SetBlock(block.BlockId, pos, stack);    
+            api.World.BlockAccessor.SetBlock(block.BlockId, pos);
             api.World.BlockAccessor.MarkBlockDirty(pos);
 
         }
