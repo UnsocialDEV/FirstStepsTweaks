@@ -9,7 +9,6 @@ namespace FirstStepsTweaks.Services
         {
             if (string.IsNullOrWhiteSpace(code) || quantity <= 0)
                 return;
-
             AssetLocation asset = new AssetLocation(code);
 
             CollectibleObject collectible =

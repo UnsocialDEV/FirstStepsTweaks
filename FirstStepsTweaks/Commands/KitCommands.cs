@@ -75,10 +75,22 @@ namespace FirstStepsTweaks.Commands
         {
             if (items == null) return;
 
+            // Consolidate items by Code. If duplicates exist, keep the first occurrence's quantity and skip subsequent duplicates.
+            var consolidated = new System.Collections.Generic.Dictionary<string, int>(System.StringComparer.OrdinalIgnoreCase);
             foreach (var item in items)
             {
                 if (item == null || string.IsNullOrWhiteSpace(item.Code) || item.Quantity <= 0) continue;
-                ItemService.GiveCollectible(api, player, item.Code, item.Quantity);
+                if (consolidated.ContainsKey(item.Code))
+                {
+                    continue;
+                }
+
+                consolidated[item.Code] = item.Quantity;
+            }
+
+            foreach (var kvp in consolidated)
+            {
+                ItemService.GiveCollectible(api, player, kvp.Key, kvp.Value);
             }
         }
     }
