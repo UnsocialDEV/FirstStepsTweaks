@@ -14,7 +14,6 @@
   </ItemGroup>
   <ItemGroup>
     <None Remove="assets\firststepstweaks\blocktypes\gravestone.json" />
-    <None Remove="assets\firststepstweaks\patches\fastergravestone.json" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.7705" />
@@ -32,9 +31,9 @@
     <Content Update="Assets\firststepstweaks\blocktypes\gravestone.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <Content Update="Assets\firststepstweaks\patches\fastergravestone.json">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="Assets\firststepstweaks\patches\" />
   </ItemGroup>
   <Target Name="PostBuild" AfterTargets="PostBuildEvent">
     <Exec Command="set ModName=FirstStepsTweaks&#xD;&#xA;set ModsFolder=C:\Users\daytonwatson\AppData\Roaming\VSserverData\Mods&#xD;&#xA;&#xD;&#xA;echo Building mod zip...&#xD;&#xA;&#xD;&#xA;if not exist &quot;%25ModsFolder%25&quot; mkdir &quot;%25ModsFolder%25&quot;&#xD;&#xA;&#xD;&#xA;if exist &quot;%25ModsFolder%25\%25ModName%25.zip&quot; del &quot;%25ModsFolder%25\%25ModName%25.zip&quot;&#xD;&#xA;&#xD;&#xA;powershell -NoProfile -ExecutionPolicy Bypass -Command ^&#xD;&#xA;&quot;Compress-Archive -LiteralPath '$(TargetPath)','$(ProjectDir)modinfo.json','$(ProjectDir)assets' -DestinationPath '%25ModsFolder%25\%25ModName%25.zip' -Force&quot;&#xD;&#xA;&#xD;&#xA;echo Done." />

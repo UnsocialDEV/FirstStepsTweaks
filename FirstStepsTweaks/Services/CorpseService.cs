@@ -1056,11 +1056,6 @@ namespace FirstStepsTweaks.Services
             }
         }
 
-        private string GetGravePath()
-        {
-            return gravePath;
-        }
-
         private void PlaceGraveBlock(BlockPos pos)
         {
             Block block = api.World.GetBlock(graveBlockCode);

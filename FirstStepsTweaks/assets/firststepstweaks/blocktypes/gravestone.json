@@ -1,16 +1,24 @@
 {
   "code": "gravestone",
   "blockMaterial": "stone",
+  "RequiredMiningTier": 0,
   "resistance": 0.3,
-  "glowLevel": 10,
+
+  "lightAbsorption": 24,
+  "lighthsv": [32, 255, 255],
 
   "drawType": "json",
   "sideopaque": { "all": false },
+
   "randomizeRotations": true,
+  "randomdrawoffset": true,
+
+  "snowcoverage": true,
 
   "shape": { "base": "game:block/clutter/gravestone-3" },
 
   "collisionBoxes": [],
+  "drops": [],
 
   "selectionBoxes": [
     { "x1": 0.1439, "y1": 0, "z1": 0.3503, "x2": 0.875, "y2": 0.9375, "z2": 0.6565 }
