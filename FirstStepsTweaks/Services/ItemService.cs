@@ -24,9 +24,9 @@ namespace FirstStepsTweaks.Services
 
             ItemStack stack = new ItemStack(collectible, quantity);
 
-            player.InventoryManager.TryGiveItemstack(stack, true);
+            bool fullyGiven = player.InventoryManager.TryGiveItemstack(stack, true);
 
-            if (stack.StackSize > 0)
+            if (!fullyGiven && stack.StackSize > 0)
             {
                 api.World.SpawnItemEntity(stack, player.Entity.Pos.XYZ);
             }
