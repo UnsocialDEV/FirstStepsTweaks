@@ -79,7 +79,6 @@ namespace FirstStepsTweaks.Services
                         item.Itemstack?.Collectible?.Code?.Path == gravePath)
                     {
                         item.Die();
-                        api.Logger.Warning("[GRAVE] Skull drop removed.");
                     }
                 }
             }
@@ -124,7 +123,6 @@ namespace FirstStepsTweaks.Services
 
             if (!TryBeginDeathProcessing(player.PlayerUID))
             {
-                api.Logger.Warning($"[GRAVE SAVE] Skipping overlapping death processing for {player.PlayerUID}");
                 return;
             }
 
@@ -156,10 +154,6 @@ namespace FirstStepsTweaks.Services
 
                 int graveId = GetOrCreateGraveId(gravePos);
 
-                if (!gravePos.Equals(requestedPos))
-                {
-                    api.Logger.Warning($"[GRAVE SAVE] Requested position {requestedPos} is occupied. Using nearby position {gravePos} for graveId={graveId}.");
-                }
 
                 long createdAtMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
                 string deathEventId = Guid.NewGuid().ToString("N");
@@ -228,13 +222,7 @@ namespace FirstStepsTweaks.Services
             api.WorldManager.SaveGame.StoreData(backupKey, raw);
 
             byte[] confirm = api.WorldManager.SaveGame.GetData(backupKey);
-            bool ok = confirm != null && confirm.Length > 0;
-            if (ok)
-            {
-                api.Logger.Warning($"[GRAVE BACKUP] Emergency backup updated for {player.PlayerUID} graveId={graveId} pos={pos}");
-            }
-
-            return ok;
+            return confirm != null && confirm.Length > 0;
         }
 
         private bool SaveToWorldData(IPlayer player, List<ItemStack> stacks, BlockPos pos, int graveId, long createdAtMs, string deathEventId)
@@ -275,7 +263,6 @@ namespace FirstStepsTweaks.Services
             }
 
             TrackOrUpdateActiveGrave(pos, player.PlayerUID, player.PlayerName, ReadGraveId(raw, pos));
-            api.Logger.Warning($"[GRAVE SAVE] Stored grave at {pos} with {stacks.Count} stack(s) graveId={graveId}");
             return true;
         }
 
@@ -434,7 +421,6 @@ namespace FirstStepsTweaks.Services
                     "This grave is stale because your backup was already restored.",
                     EnumChatType.Notification
                 );
-                api.Logger.Warning($"[GRAVE RESTORE] Ignored stale graveId={graveId} at {pos} for {byPlayer.PlayerUID}; backupRestoredAtMs={restoredAtMs}, createdAtMs={createdAtMs}");
                 return;
             }
 
@@ -458,7 +444,7 @@ namespace FirstStepsTweaks.Services
                 ClearEmergencyBackup(byPlayer.PlayerUID, graveId, "grave claimed");
             }
 
-            api.Logger.Warning($"[GRAVE RESTORE] Restored graveId={graveId} at {pos} by {byPlayer.PlayerName} (owner={isOwner}, expired={isExpired})");
+            api.Logger.Warning($"[CORPSE] Restored grave #{graveId} at {pos} for {byPlayer.PlayerName}.");
         }
 
         private void GiveItemsBack(IServerPlayer player, List<ItemStack> stacks)
@@ -481,11 +467,8 @@ namespace FirstStepsTweaks.Services
                 int remainingAllowed = totalSerializedStacks - totalRestoredStacks;
                 if (remainingAllowed <= 0)
                 {
-                    api.Logger.Warning($"[GRAVE GIVE] Stopping restore for {player.PlayerUID}; reached serialized stack cap {totalSerializedStacks}.");
                     break;
                 }
-
-                api.Logger.Warning($"[GRAVE GIVE] Attempting to give {stack.Collectible?.Code} x{stack.StackSize}");
 
                 ItemStack giveStack = stack.Clone();
                 if (giveStack.StackSize > remainingAllowed)
@@ -496,7 +479,6 @@ namespace FirstStepsTweaks.Services
                 int beforeGive = giveStack.StackSize;
 
                 bool fullyGiven = player.InventoryManager.TryGiveItemstack(giveStack, true);
-                api.Logger.Warning($"[GRAVE GIVE] Remaining stack size after give: {giveStack.StackSize}");
 
                 int restoredThisStack = beforeGive - Math.Max(giveStack.StackSize, 0);
                 if (restoredThisStack > 0)
@@ -601,13 +583,11 @@ namespace FirstStepsTweaks.Services
 
             if (expectedPos != null && !backupPos.Equals(expectedPos))
             {
-                api.Logger.Warning($"[GRAVE BACKUP] Skipping restore for {player.PlayerUID} graveId={backupGraveId}; backup position {backupPos} != expected {expectedPos}");
                 return false;
             }
 
             if (!string.IsNullOrEmpty(expectedDeathEventId) && expectedDeathEventId != backupDeathEventId)
             {
-                api.Logger.Warning($"[GRAVE BACKUP] Skipping restore for {player.PlayerUID} graveId={backupGraveId}; deathEventId mismatch");
                 return false;
             }
 
@@ -617,7 +597,6 @@ namespace FirstStepsTweaks.Services
             bool hasLinkedData = linkedRaw != null && linkedRaw.Length > 0;
             if (stillTracked || hasLinkedData)
             {
-                api.Logger.Warning($"[GRAVE BACKUP] Skipping restore for {player.PlayerUID} graveId={backupGraveId}; linked grave still exists at {backupPos}");
                 return false;
             }
 
@@ -633,7 +612,7 @@ namespace FirstStepsTweaks.Services
                 $"Your corpse backup was restored ({reason}).",
                 EnumChatType.Notification
             );
-            api.Logger.Warning($"[GRAVE BACKUP] Restored emergency backup for {player.PlayerUID} graveId={backupGraveId} ({reason})");
+            api.Logger.Warning($"[CORPSE] Restored backup for {player.PlayerUID} (#{backupGraveId}, {reason}).");
             return true;
         }
 
@@ -1028,7 +1007,6 @@ namespace FirstStepsTweaks.Services
         private void ClearEmergencyBackup(string playerUid, int graveId, string reason)
         {
             api.WorldManager.SaveGame.StoreData(GetEmergencyBackupKey(playerUid), new byte[0]);
-            api.Logger.Warning($"[GRAVE BACKUP] Cleared emergency backup for {playerUid} graveId={graveId} ({reason})");
         }
 
         private void SetBackupRestoredAtMs(string playerUid, long restoredAtMs)
