@@ -50,6 +50,12 @@ namespace FirstStepsTweaks.Commands
             string category = GetWindCategory(windStrength);
 
             player.SendMessage(
+                GlobalConstants.InfoLogChatGroup,
+                $"Wind: {windStrength:0.00} ({category})",
+                EnumChatType.CommandSuccess
+            );
+
+            player.SendMessage(
                 GlobalConstants.GeneralChatGroup,
                 $"Wind: {windStrength:0.00} ({category})",
                 EnumChatType.Notification
@@ -67,6 +73,12 @@ namespace FirstStepsTweaks.Commands
             {
                 caller.SendMessage(
                     GlobalConstants.InfoLogChatGroup,
+                    "No players online.",
+                    EnumChatType.Notification
+                );
+
+                caller.SendMessage(
+                    GlobalConstants.GeneralChatGroup,
                     "No players online.",
                     EnumChatType.Notification
                 );
@@ -97,6 +109,12 @@ namespace FirstStepsTweaks.Commands
                 GlobalConstants.InfoLogChatGroup,
                 $"{header}{Environment.NewLine}{playerList}",
                 EnumChatType.CommandSuccess
+            );
+
+            caller.SendMessage(
+                GlobalConstants.GeneralChatGroup,
+                $"{header}{Environment.NewLine}{playerList}",
+                EnumChatType.Notification
             );
 
             return TextCommandResult.Success();

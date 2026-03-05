@@ -43,13 +43,15 @@ namespace FirstStepsTweaks.Commands
 
             if (player.GetModdata(StarterKey) != null)
             {
-                player.SendMessage(GlobalConstants.InfoLogChatGroup, "You have already claimed your starter kit.", EnumChatType.CommandError);
+                player.SendMessage(GlobalConstants.InfoLogChatGroup, "You have already claimed your starter kit.", EnumChatType.CommandSuccess);
+                player.SendMessage(GlobalConstants.GeneralChatGroup, "You have already claimed your starter kit.", EnumChatType.Notification);
                 return TextCommandResult.Success();
             }
 
             GiveConfiguredItems(api, player, kitConfig.StarterItems);
             player.SetModdata(StarterKey, new byte[] { 1 });
             player.SendMessage(GlobalConstants.InfoLogChatGroup, "You have received your starter kit!", EnumChatType.CommandSuccess);
+            player.SendMessage(GlobalConstants.GeneralChatGroup, "You have received your starter kit!", EnumChatType.Notification);
 
             return TextCommandResult.Success();
         }
@@ -61,12 +63,16 @@ namespace FirstStepsTweaks.Commands
             if (player.GetModdata(WinterKey) != null)
             {
                 player.SendMessage(GlobalConstants.InfoLogChatGroup, "You have already claimed your winter kit.", EnumChatType.CommandError);
+                player.SendMessage(GlobalConstants.GeneralChatGroup, "You have already claimed your winter kit.", EnumChatType.Notification);
+
                 return TextCommandResult.Success();
             }
 
             GiveConfiguredItems(api, player, kitConfig.WinterItems);
             player.SetModdata(WinterKey, new byte[] { 1 });
             player.SendMessage(GlobalConstants.InfoLogChatGroup, "You have received your winter kit!", EnumChatType.CommandSuccess);
+            player.SendMessage(GlobalConstants.GeneralChatGroup, "You have received your winter kit!", EnumChatType.Notification);
+
 
             return TextCommandResult.Success();
         }

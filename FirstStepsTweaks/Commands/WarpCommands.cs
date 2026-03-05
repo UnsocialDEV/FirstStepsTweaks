@@ -57,7 +57,9 @@ namespace FirstStepsTweaks.Commands
 
             if (string.IsNullOrWhiteSpace(warpName))
             {
-                player.SendMessage(GlobalConstants.InfoLogChatGroup, "Warp name cannot be empty.", EnumChatType.CommandError);
+                player.SendMessage(GlobalConstants.InfoLogChatGroup, "Warp name cannot be empty.", EnumChatType.CommandSuccess);
+                player.SendMessage(GlobalConstants.GeneralChatGroup, "Warp name cannot be empty.", EnumChatType.Notification);
+
                 return TextCommandResult.Success();
             }
 
@@ -70,6 +72,8 @@ namespace FirstStepsTweaks.Commands
 
             string action = updated ? "updated" : "set";
             player.SendMessage(GlobalConstants.InfoLogChatGroup, $"Warp '{warpName}' {action}.", EnumChatType.CommandSuccess);
+            player.SendMessage(GlobalConstants.GeneralChatGroup, $"Warp '{warpName}' {action}.", EnumChatType.Notification);
+
             return TextCommandResult.Success();
         }
 
@@ -80,19 +84,25 @@ namespace FirstStepsTweaks.Commands
 
             if (string.IsNullOrWhiteSpace(warpName))
             {
-                player.SendMessage(GlobalConstants.InfoLogChatGroup, "Warp name cannot be empty.", EnumChatType.CommandError);
+                player.SendMessage(GlobalConstants.InfoLogChatGroup, "Warp name cannot be empty.", EnumChatType.CommandSuccess);
+                player.SendMessage(GlobalConstants.GeneralChatGroup, "Warp name cannot be empty.", EnumChatType.Notification);
+
                 return TextCommandResult.Success();
             }
 
             Dictionary<string, double[]> warps = LoadWarps(api);
             if (!warps.Remove(warpName))
             {
-                player.SendMessage(GlobalConstants.InfoLogChatGroup, $"Warp '{warpName}' does not exist.", EnumChatType.CommandError);
+                player.SendMessage(GlobalConstants.InfoLogChatGroup, $"Warp '{warpName}' does not exist.", EnumChatType.CommandSuccess);
+                player.SendMessage(GlobalConstants.GeneralChatGroup, $"Warp '{warpName}' does not exist.", EnumChatType.Notification);
+
                 return TextCommandResult.Success();
             }
 
             SaveWarps(api, warps);
             player.SendMessage(GlobalConstants.InfoLogChatGroup, $"Warp '{warpName}' deleted.", EnumChatType.CommandSuccess);
+            player.SendMessage(GlobalConstants.GeneralChatGroup, $"Warp '{warpName}' deleted.", EnumChatType.Notification);
+
             return TextCommandResult.Success();
         }
 
@@ -104,7 +114,9 @@ namespace FirstStepsTweaks.Commands
             Dictionary<string, double[]> warps = LoadWarps(api);
             if (!warps.TryGetValue(warpName, out double[] target) || target == null || target.Length != 3)
             {
-                player.SendMessage(GlobalConstants.InfoLogChatGroup, $"Warp '{warpName}' does not exist.", EnumChatType.CommandError);
+                player.SendMessage(GlobalConstants.InfoLogChatGroup, $"Warp '{warpName}' does not exist.", EnumChatType.CommandSuccess);
+                player.SendMessage(GlobalConstants.GeneralChatGroup, $"Warp '{warpName}' does not exist.", EnumChatType.Notification);
+
                 return TextCommandResult.Success();
             }
 
@@ -125,6 +137,12 @@ namespace FirstStepsTweaks.Commands
                 EnumChatType.CommandSuccess
             );
 
+            player.SendMessage(
+                GlobalConstants.GeneralChatGroup,
+                $"Teleporting to warp '{warpName}' in {teleportConfig.WarmupSeconds} seconds. Do not move.",
+                EnumChatType.Notification
+            );
+
             listenerId = api.Event.RegisterGameTickListener((dt) =>
             {
                 if (player?.Entity == null)
@@ -142,8 +160,15 @@ namespace FirstStepsTweaks.Commands
                     player.SendMessage(
                         GlobalConstants.InfoLogChatGroup,
                         "Teleport cancelled because you moved.",
-                        EnumChatType.CommandError
+                        EnumChatType.CommandSuccess
                     );
+
+                    player.SendMessage(
+                        GlobalConstants.GeneralChatGroup,
+                        "Teleport cancelled because you moved.",
+                        EnumChatType.Notification
+                    );
+
                     api.Event.UnregisterGameTickListener(listenerId);
                     return;
                 }
@@ -173,7 +198,9 @@ namespace FirstStepsTweaks.Commands
 
             if (warps.Count == 0)
             {
-                player.SendMessage(GlobalConstants.InfoLogChatGroup, "No warps have been set.", EnumChatType.Notification);
+                player.SendMessage(GlobalConstants.InfoLogChatGroup, "No warps have been set.", EnumChatType.CommandSuccess);
+                player.SendMessage(GlobalConstants.GeneralChatGroup, "No warps have been set.", EnumChatType.Notification);
+
                 return TextCommandResult.Success();
             }
 

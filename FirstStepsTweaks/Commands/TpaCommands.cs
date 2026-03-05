@@ -98,13 +98,17 @@ namespace FirstStepsTweaks.Commands
 
             if (target == null)
             {
-                caller.SendMessage(GlobalConstants.InfoLogChatGroup, "Player not found.", EnumChatType.CommandError);
+                caller.SendMessage(GlobalConstants.InfoLogChatGroup, "Player not found.", EnumChatType.CommandSuccess);
+                caller.SendMessage(GlobalConstants.GeneralChatGroup, "Player not found.", EnumChatType.Notification);
+
                 return TextCommandResult.Success();
             }
 
             if (target.PlayerUID == caller.PlayerUID)
             {
-                caller.SendMessage(GlobalConstants.InfoLogChatGroup, "You cannot teleport to yourself.", EnumChatType.CommandError);
+                caller.SendMessage(GlobalConstants.InfoLogChatGroup, "You cannot teleport to yourself.", EnumChatType.CommandSuccess);
+                caller.SendMessage(GlobalConstants.GeneralChatGroup, "You cannot teleport to yourself.", EnumChatType.Notification);
+
                 return TextCommandResult.Success();
             }
 
@@ -112,7 +116,13 @@ namespace FirstStepsTweaks.Commands
             {
                 caller.SendMessage(GlobalConstants.InfoLogChatGroup,
                     $"{target.PlayerName} is not accepting teleport requests.",
-                    EnumChatType.CommandError);
+                    EnumChatType.CommandSuccess
+                    );
+
+                caller.SendMessage(GlobalConstants.GeneralChatGroup,
+                    $"{target.PlayerName} is not accepting teleport requests.",
+                    EnumChatType.Notification
+                    );
                 return TextCommandResult.Success();
             }
 
@@ -137,17 +147,33 @@ namespace FirstStepsTweaks.Commands
                 var requester = GetPlayer(api, request.RequesterUid);
                 requester?.SendMessage(GlobalConstants.InfoLogChatGroup,
                     "Your teleport request expired.",
-                    EnumChatType.CommandError);
+                    EnumChatType.CommandSuccess);
+
+                requester?.SendMessage(GlobalConstants.GeneralChatGroup,
+                    "Your teleport request expired.",
+                    EnumChatType.Notification);
 
             }, teleportConfig.TpaExpireMs);
 
             caller.SendMessage(GlobalConstants.InfoLogChatGroup,
                 $"Teleport request sent to {target.PlayerName}.",
+                EnumChatType.CommandSuccess);
+
+            caller.SendMessage(GlobalConstants.GeneralChatGroup,
+                $"Teleport request sent to {target.PlayerName}.",
                 EnumChatType.Notification);
 
             target.SendMessage(GlobalConstants.InfoLogChatGroup,
                 $"{caller.PlayerName} wants to teleport to you. Use /tpaccept to accept.",
+                EnumChatType.CommandSuccess);
+
+            target.SendMessage(GlobalConstants.GeneralChatGroup,
+                $"{caller.PlayerName} wants to teleport to you. Use /tpaccept to accept.",
                 EnumChatType.Notification);
+
+            target.SendMessage(GlobalConstants.InfoLogChatGroup,
+                $"You recieved a teleport request from {caller.PlayerName}.",
+                EnumChatType.CommandSuccess);
 
             target.SendMessage(GlobalConstants.GeneralChatGroup,
                 $"You recieved a teleport request from {caller.PlayerName}.",
@@ -164,7 +190,11 @@ namespace FirstStepsTweaks.Commands
             {
                 target.SendMessage(GlobalConstants.InfoLogChatGroup,
                     "No pending teleport requests.",
-                    EnumChatType.CommandError);
+                    EnumChatType.CommandSuccess);
+
+                target.SendMessage(GlobalConstants.GeneralChatGroup,
+                    "No pending teleport requests.",
+                    EnumChatType.Notification);
                 return TextCommandResult.Success();
             }
 
@@ -178,7 +208,11 @@ namespace FirstStepsTweaks.Commands
             {
                 target.SendMessage(GlobalConstants.InfoLogChatGroup,
                     "Requester is no longer online.",
-                    EnumChatType.CommandError);
+                    EnumChatType.CommandSuccess);
+
+                target.SendMessage(GlobalConstants.GeneralChatGroup,
+                    "Requester is no longer online.",
+                    EnumChatType.Notification);
                 return TextCommandResult.Success();
             }
 
@@ -198,6 +232,10 @@ namespace FirstStepsTweaks.Commands
 
             requester.SendMessage(GlobalConstants.InfoLogChatGroup,
                 $"Teleporting in {teleportConfig.WarmupSeconds} seconds. Do not move.",
+                EnumChatType.CommandSuccess);
+
+            requester.SendMessage(GlobalConstants.GeneralChatGroup,
+                $"Teleporting in {teleportConfig.WarmupSeconds} seconds. Do not move.",
                 EnumChatType.Notification);
 
             listenerId = api.Event.RegisterGameTickListener(dt =>
@@ -216,7 +254,11 @@ namespace FirstStepsTweaks.Commands
                 {
                     requester.SendMessage(GlobalConstants.InfoLogChatGroup,
                         "Teleport cancelled because you moved.",
-                        EnumChatType.CommandError);
+                        EnumChatType.CommandSuccess);
+
+                    requester.SendMessage(GlobalConstants.GeneralChatGroup,
+                        "Teleport cancelled because you moved.",
+                        EnumChatType.Notification);
 
                     api.Event.UnregisterGameTickListener(listenerId);
                     return;
@@ -252,7 +294,11 @@ namespace FirstStepsTweaks.Commands
             {
                 target.SendMessage(GlobalConstants.InfoLogChatGroup,
                     "No pending teleport requests.",
-                    EnumChatType.CommandError);
+                    EnumChatType.CommandSuccess);
+
+                target.SendMessage(GlobalConstants.GeneralChatGroup,
+                    "No pending teleport requests.",
+                    EnumChatType.Notification);
                 return TextCommandResult.Success();
             }
 
@@ -264,7 +310,11 @@ namespace FirstStepsTweaks.Commands
             var requester = GetPlayer(api, request.RequesterUid);
             requester?.SendMessage(GlobalConstants.InfoLogChatGroup,
                 "Your teleport request was denied.",
-                EnumChatType.CommandError);
+                EnumChatType.CommandSuccess);
+
+            requester?.SendMessage(GlobalConstants.GeneralChatGroup,
+                "Your teleport request was denied.",
+                EnumChatType.Notification);
 
             return TextCommandResult.Success();
         }
@@ -285,6 +335,10 @@ namespace FirstStepsTweaks.Commands
 
                         caller.SendMessage(GlobalConstants.InfoLogChatGroup,
                             "Teleport request cancelled.",
+                            EnumChatType.CommandSuccess);
+
+                        caller.SendMessage(GlobalConstants.GeneralChatGroup,
+                            "Teleport request cancelled.",
                             EnumChatType.Notification);
 
                         return TextCommandResult.Success();
@@ -294,7 +348,11 @@ namespace FirstStepsTweaks.Commands
 
             caller.SendMessage(GlobalConstants.InfoLogChatGroup,
                 "You have no pending requests.",
-                EnumChatType.CommandError);
+                EnumChatType.Notification);
+
+            caller.SendMessage(GlobalConstants.GeneralChatGroup,
+                "You have no pending requests.",
+                EnumChatType.Notification);
 
             return TextCommandResult.Success();
         }
@@ -320,20 +378,32 @@ namespace FirstStepsTweaks.Commands
                         var requester = GetPlayer(api, request.RequesterUid);
                         requester?.SendMessage(GlobalConstants.InfoLogChatGroup,
                             "Your teleport request was automatically denied.",
-                            EnumChatType.CommandError);
+                            EnumChatType.CommandSuccess);
+
+                        requester?.SendMessage(GlobalConstants.GeneralChatGroup,
+                            "Your teleport request was automatically denied.",
+                            EnumChatType.Notification);
                     }
 
                     list.Clear();
                 }
 
                 player.SendMessage(GlobalConstants.InfoLogChatGroup,
-                    "TPA requests DISABLED.",
+                    "TPA requests disabled.",
+                    EnumChatType.CommandSuccess);
+
+                player.SendMessage(GlobalConstants.GeneralChatGroup,
+                    "TPA requests disabled.",
                     EnumChatType.Notification);
             }
             else
             {
                 player.SendMessage(GlobalConstants.InfoLogChatGroup,
-                    "TPA requests ENABLED.",
+                    "TPA requests enabled.",
+                    EnumChatType.CommandSuccess);
+
+                player.SendMessage(GlobalConstants.GeneralChatGroup,
+                    "TPA requests enabled.",
                     EnumChatType.Notification);
             }
 

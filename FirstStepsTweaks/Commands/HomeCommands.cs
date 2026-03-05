@@ -44,7 +44,13 @@ namespace FirstStepsTweaks.Commands
                 player.SendMessage(
                     GlobalConstants.InfoLogChatGroup,
                     "You already have a home set. Use /delhome first.",
-                    EnumChatType.CommandError
+                    EnumChatType.CommandSuccess
+                );
+
+                player.SendMessage(
+                    GlobalConstants.GeneralChatGroup,
+                    "You already have a home set. Use /delhome first.",
+                    EnumChatType.Notification
                 );
                 return TextCommandResult.Success();
             }
@@ -64,6 +70,12 @@ namespace FirstStepsTweaks.Commands
                 EnumChatType.CommandSuccess
             );
 
+            player.SendMessage(
+                GlobalConstants.GeneralChatGroup,
+                "Home set.",
+                EnumChatType.Notification
+            );
+
             return TextCommandResult.Success();
         }
         private static TextCommandResult Home(ICoreServerAPI api, TextCommandCallingArgs args)
@@ -77,7 +89,13 @@ namespace FirstStepsTweaks.Commands
                 player.SendMessage(
                     GlobalConstants.InfoLogChatGroup,
                     "You do not have a valid home set.",
-                    EnumChatType.CommandError
+                    EnumChatType.CommandSuccess
+                );
+
+                player.SendMessage(
+                    GlobalConstants.GeneralChatGroup,
+                    "You do not have a valid home set.",
+                    EnumChatType.Notification
                 );
                 return TextCommandResult.Success();
             }
@@ -96,7 +114,14 @@ namespace FirstStepsTweaks.Commands
             player.SendMessage(
                 GlobalConstants.InfoLogChatGroup,
                 $"Teleporting you home in {teleportConfig.WarmupSeconds} seconds. Do not move.",
-                EnumChatType.CommandSuccess);
+                EnumChatType.CommandSuccess
+                );
+
+            player.SendMessage(
+                GlobalConstants.GeneralChatGroup,
+                $"Teleporting you home in {teleportConfig.WarmupSeconds} seconds. Do not move.",
+                EnumChatType.Notification
+                );
 
             listenerId = api.Event.RegisterGameTickListener((dt) =>
             {
@@ -116,7 +141,13 @@ namespace FirstStepsTweaks.Commands
                     player.SendMessage(
                         GlobalConstants.InfoLogChatGroup,
                         "Teleport cancelled because you moved.",
-                        EnumChatType.CommandError
+                        EnumChatType.CommandSuccess
+                    );
+
+                    player.SendMessage(
+                        GlobalConstants.GeneralChatGroup,
+                        "Teleport cancelled because you moved.",
+                        EnumChatType.Notification
                     );
 
                     api.Event.UnregisterGameTickListener(listenerId);
@@ -153,12 +184,24 @@ namespace FirstStepsTweaks.Commands
                 player.SendMessage(
                     GlobalConstants.InfoLogChatGroup,
                     "You do not have a home set.",
-                    EnumChatType.CommandError
+                    EnumChatType.CommandSuccess
+                );
+
+                player.SendMessage(
+                    GlobalConstants.GeneralChatGroup,
+                    "You do not have a home set.",
+                    EnumChatType.Notification
                 );
                 return TextCommandResult.Success();
             }
 
             player.SetModdata(HomeKey, null);
+
+            player.SendMessage(
+                GlobalConstants.InfoLogChatGroup,
+                "Home deleted.",
+                EnumChatType.CommandSuccess
+            );
 
             player.SendMessage(
                 GlobalConstants.InfoLogChatGroup,

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using FirstStepsTweaks.Config;
 using Vintagestory.API.Common;
 using Vintagestory.API.Server;
@@ -9,6 +9,7 @@ namespace FirstStepsTweaks.Services
     {
         private readonly ICoreServerAPI api;
         private readonly JoinConfig joinConfig;
+        private readonly bool enableJoinBroadcasts;
 
         private const string FirstJoinKey = "fst_firstjoin";
         private const string LastSeenDayKey = "fst_lastseenday";
@@ -17,10 +18,14 @@ namespace FirstStepsTweaks.Services
         {
             this.api = api;
             joinConfig = config?.Join ?? new JoinConfig();
+            enableJoinBroadcasts = config?.Features?.EnableJoinBroadcasts ?? true;
         }
 
-        public void OnPlayerJoin(IServerPlayer player)
+        public void OnPlayerNowPlaying(IServerPlayer player)
         {
+            if (player == null) return;
+            if (!enableJoinBroadcasts) return;
+
             byte[] data = player.GetModdata(FirstJoinKey);
             double currentTotalDays = api.World.Calendar.TotalDays;
 

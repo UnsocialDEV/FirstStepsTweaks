@@ -1,4 +1,4 @@
-﻿using FirstStepsTweaks.Commands;
+using FirstStepsTweaks.Commands;
 using FirstStepsTweaks.Config;
 using FirstStepsTweaks.Discord;
 using FirstStepsTweaks.Services;
@@ -11,6 +11,7 @@ namespace FirstStepsTweaks
     {
         private DiscordBridge discord;
         private JoinService joinService;
+        private JoinInvulnerabilityService joinInvulnerabilityService;
         private CorpseService corpseService;
         private LandClaimNotificationService landClaimNotificationService;
 
@@ -20,6 +21,7 @@ namespace FirstStepsTweaks
 
             discord = new DiscordBridge(api);
             joinService = new JoinService(api, config);
+            joinInvulnerabilityService = new JoinInvulnerabilityService(api);
 
             if (config.Features.EnableCorpseService)
             {
@@ -34,10 +36,10 @@ namespace FirstStepsTweaks
                 BackCommands.Register(api, config);
             }
 
-            if (config.Features.EnableJoinBroadcasts)
-            {
-                api.Event.PlayerNowPlaying += joinService.OnPlayerJoin;
-            }
+            api.Event.PlayerJoin += joinInvulnerabilityService.OnPlayerJoin;
+            api.Event.PlayerNowPlaying += joinInvulnerabilityService.OnPlayerNowPlaying;
+            api.Event.PlayerNowPlaying += joinService.OnPlayerNowPlaying;
+            api.Event.PlayerLeave += joinInvulnerabilityService.OnPlayerLeave;
 
             if (config.Features.EnableLandClaimNotifications)
             {

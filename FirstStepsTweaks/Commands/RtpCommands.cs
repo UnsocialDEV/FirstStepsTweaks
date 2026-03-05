@@ -49,7 +49,13 @@ namespace FirstStepsTweaks.Commands
                         GlobalConstants.InfoLogChatGroup,
                         $"You must wait {remainingSeconds}s before using /rtp again.",
                         EnumChatType.CommandError
-                    );
+                        );
+
+                    player.SendMessage(
+                        GlobalConstants.GeneralChatGroup,
+                        $"You must wait {remainingSeconds}s before using /rtp again.",
+                        EnumChatType.Notification
+                        );
                     return TextCommandResult.Success();
                 }
             }
@@ -61,6 +67,12 @@ namespace FirstStepsTweaks.Commands
                     GlobalConstants.InfoLogChatGroup,
                     "Failed to find a safe random destination. Try again.",
                     EnumChatType.CommandError
+                );
+
+                player.SendMessage(
+                    GlobalConstants.GeneralChatGroup,
+                    "Failed to find a safe random destination. Try again.",
+                    EnumChatType.Notification
                 );
                 return TextCommandResult.Success();
             }
@@ -77,6 +89,12 @@ namespace FirstStepsTweaks.Commands
                     GlobalConstants.InfoLogChatGroup,
                     "Teleported to a random location.",
                     EnumChatType.CommandSuccess
+                );
+
+                player.SendMessage(
+                    GlobalConstants.GeneralChatGroup,
+                    "Teleported to a random location.",
+                    EnumChatType.Notification
                 );
                 LastRtpByPlayerUid[player.PlayerUID] = nowMs;
             }
@@ -176,6 +194,12 @@ namespace FirstStepsTweaks.Commands
                 EnumChatType.CommandSuccess
             );
 
+            player.SendMessage(
+                GlobalConstants.GeneralChatGroup,
+                $"Teleporting to a random location in {teleportConfig.WarmupSeconds} seconds. Do not move.",
+                EnumChatType.Notification
+            );
+
             listenerId = api.Event.RegisterGameTickListener((dt) =>
             {
                 if (player?.Entity == null)
@@ -195,6 +219,13 @@ namespace FirstStepsTweaks.Commands
                         "Teleport cancelled because you moved.",
                         EnumChatType.CommandError
                     );
+
+                    player.SendMessage(
+                        GlobalConstants.GeneralChatGroup,
+                        "Teleport cancelled because you moved.",
+                        EnumChatType.Notification
+                    );
+
                     api.Event.UnregisterGameTickListener(listenerId);
                     return;
                 }

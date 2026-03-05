@@ -27,7 +27,7 @@ namespace FirstStepsTweaks.Commands
             var message = discordCommandConfig.InviteMessage;
 
             player.SendMessage(GlobalConstants.GeneralChatGroup, message, EnumChatType.AllGroups);
-            player.SendMessage(GlobalConstants.InfoLogChatGroup, message, EnumChatType.AllGroups);
+            player.SendMessage(GlobalConstants.InfoLogChatGroup, message, EnumChatType.Notification);
 
             return TextCommandResult.Success();
         }

@@ -52,6 +52,12 @@ namespace FirstStepsTweaks.Commands
                 EnumChatType.CommandSuccess
             );
 
+            player.SendMessage(
+                GlobalConstants.GeneralChatGroup,
+                "Spawn position set.",
+                EnumChatType.Notification
+            );
+
             return TextCommandResult.Success();
         }
 
@@ -66,7 +72,13 @@ namespace FirstStepsTweaks.Commands
                 player.SendMessage(
                     GlobalConstants.InfoLogChatGroup,
                     "Spawn has not been set yet.",
-                    EnumChatType.CommandError
+                    EnumChatType.CommandSuccess
+                );
+
+                player.SendMessage(
+                    GlobalConstants.GeneralChatGroup,
+                    "Spawn has not been set yet.",
+                    EnumChatType.Notification
                 );
                 return TextCommandResult.Success();
             }
@@ -85,7 +97,14 @@ namespace FirstStepsTweaks.Commands
             player.SendMessage(
                 GlobalConstants.InfoLogChatGroup,
                 $"Teleporting you in {teleportConfig.WarmupSeconds} seconds. Do not move.",
-                EnumChatType.CommandSuccess);
+                EnumChatType.CommandSuccess
+                );
+
+            player.SendMessage(
+                GlobalConstants.GeneralChatGroup,
+                $"Teleporting you in {teleportConfig.WarmupSeconds} seconds. Do not move.",
+                EnumChatType.Notification
+                );
 
             listenerId = api.Event.RegisterGameTickListener((dt) =>
             {
@@ -105,8 +124,15 @@ namespace FirstStepsTweaks.Commands
                     player.SendMessage(
                         GlobalConstants.InfoLogChatGroup,
                         "Teleport cancelled because you moved.",
-                        EnumChatType.CommandError
+                        EnumChatType.CommandSuccess
                     );
+
+                    player.SendMessage(
+                        GlobalConstants.GeneralChatGroup,
+                        "Teleport cancelled because you moved.",
+                        EnumChatType.Notification
+                    );
+
                     api.Event.UnregisterGameTickListener(listenerId);
                     return;
                 }

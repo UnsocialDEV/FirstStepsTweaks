@@ -63,7 +63,13 @@ namespace FirstStepsTweaks.Commands
                 player.SendMessage(
                     GlobalConstants.InfoLogChatGroup,
                     "No previous location recorded.",
-                    EnumChatType.CommandError
+                    EnumChatType.CommandSuccess
+                );
+
+                player.SendMessage(
+                    GlobalConstants.AllChatGroups,
+                    "No previous location recorded.",
+                    EnumChatType.Notification
                 );
                 return TextCommandResult.Success();
             }
@@ -78,7 +84,14 @@ namespace FirstStepsTweaks.Commands
             player.SendMessage(
                 GlobalConstants.InfoLogChatGroup,
                 $"Teleporting to your previous location in {teleportConfig.WarmupSeconds} seconds. Do not move.",
-                EnumChatType.CommandSuccess);
+                EnumChatType.CommandSuccess
+                );
+
+            player.SendMessage(
+                    GlobalConstants.AllChatGroups,
+                    $"Teleporting to your previous location in {teleportConfig.WarmupSeconds} seconds. Do not move.",
+                    EnumChatType.Notification
+                );
 
             listenerId = api.Event.RegisterGameTickListener((dt) =>
             {
@@ -97,7 +110,13 @@ namespace FirstStepsTweaks.Commands
                     player.SendMessage(
                         GlobalConstants.InfoLogChatGroup,
                         "Teleport cancelled because you moved.",
-                        EnumChatType.CommandError
+                        EnumChatType.CommandSuccess
+                    );
+
+                    player.SendMessage(
+                        GlobalConstants.GeneralChatGroup,
+                        "Teleport cancelled because you moved.",
+                        EnumChatType.Notification
                     );
 
                     api.Event.UnregisterGameTickListener(listenerId);
