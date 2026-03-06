@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using FirstStepsTweaks.Config;
@@ -41,20 +41,24 @@ namespace FirstStepsTweaks.Services
         private readonly object deathProcessingLock = new object();
         private bool suspendIndexPersistence;
         private int nextGraveId = 1;
-        private int graveBlockId;
         private readonly AssetLocation graveBlockCode;
         private readonly string gravePath;
+        private readonly string graveDomain;
         private readonly CorpseConfig corpseConfig;
+        private bool missingGraveBlockLogged;
 
         public CorpseService(ICoreServerAPI api, FirstStepsTweaksConfig config)
         {
             this.api = api;
             corpseConfig = config?.Corpse ?? new CorpseConfig();
-            graveBlockCode = new AssetLocation(corpseConfig.GraveBlockCode);
+            string configuredGraveCode = string.IsNullOrWhiteSpace(corpseConfig.GraveBlockCode)
+                ? "firststepstweaks:gravestone"
+                : corpseConfig.GraveBlockCode.Trim();
+            graveBlockCode = new AssetLocation(configuredGraveCode.ToLowerInvariant());
             gravePath = graveBlockCode.Path;
+            graveDomain = graveBlockCode.Domain;
 
-            Block grave = api.World.GetBlock(graveBlockCode);
-            graveBlockId = grave?.BlockId ?? 0;
+            TryResolveGraveBlock(out _);
 
             api.Event.RegisterGameTickListener(RemoveGraveDrops, corpseConfig.DropCleanupTickMs);
             api.Event.RegisterGameTickListener(EnforceGravesPresent, corpseConfig.EnforceGraveTickMs);
@@ -78,7 +82,7 @@ namespace FirstStepsTweaks.Services
                 foreach (var entity in entities)
                 {
                     if (entity is EntityItem item &&
-                        item.Itemstack?.Collectible?.Code?.Path == gravePath)
+                        IsGraveCode(item.Itemstack?.Collectible?.Code))
                     {
                         item.Die();
                     }
@@ -89,17 +93,17 @@ namespace FirstStepsTweaks.Services
         }
         private void EnforceGravesPresent(float dt)
         {
-            if (activeGravesByPos.Count == 0 || graveBlockId == 0) return;
+            if (activeGravesByPos.Count == 0) return;
 
-            // Re-place skull if data exists and the block is missing
+            // Re-place grave if data exists and the block is missing
             foreach (var record in activeGravesByPos.Values)
             {
                 BlockPos pos = record.Position;
-                // If the skull is gone, restore it
+                // If the grave is gone, restore it
                 Block current = api.World.BlockAccessor.GetBlock(pos);
                 if (current == null || current.Code == null) continue;
 
-                if (current.Code.Path != gravePath)
+                if (!IsGraveBlock(current))
                 {
                     // Only restore if still tracked and the save key still exists.
                     if (!activeGravesByPos.ContainsKey(GetPositionKey(pos))) continue;
@@ -111,11 +115,13 @@ namespace FirstStepsTweaks.Services
                     int graveId = ReadGraveId(raw, pos);
                     if (graveId <= 0) continue;
 
-                    PlaceGraveBlock(pos);
+                    if (!PlaceGraveBlock(pos))
+                    {
+                        api.Logger.Error($"[CORPSE] Grave #{graveId} data exists at {pos}, but block '{graveBlockCode}' could not be placed.");
+                    }
                 }
             }
         }
-
         public void OnEntityDeath(Entity entity, DamageSource damageSource)
         {
             if (!(entity is EntityPlayer entityPlayer)) return;
@@ -333,10 +339,10 @@ namespace FirstStepsTweaks.Services
 
         private void SpawnBones(BlockPos pos, string ownerName)
         {
-            Block bones = api.World.GetBlock(new AssetLocation(corpseConfig.GraveBlockCode));
-            if (bones == null) return;
-
-            PlaceGraveBlock(pos);
+            if (!PlaceGraveBlock(pos))
+            {
+                api.Logger.Error($"[GRAVE SAVE] Saved grave data for {ownerName}, but block '{graveBlockCode}' was unavailable and could not be placed at {pos}.");
+            }
         }
         public void OnBlockBroken(IServerPlayer byPlayer, int oldblockId, BlockSelection blockSel)
         {
@@ -348,7 +354,7 @@ namespace FirstStepsTweaks.Services
 
             // Only care about our grave block breaks
             Block block = api.World.GetBlock(oldblockId);
-            if (block == null || block.Code.Path != gravePath) return;
+            if (!IsGraveBlock(block)) return;
 
             string key = GetGraveDataKey(pos);
             byte[] raw = api.WorldManager.SaveGame.GetData(key);
@@ -389,9 +395,9 @@ namespace FirstStepsTweaks.Services
                 );
 
                 // Put the grave block back immediately
-                if (graveBlockId != 0)
+                if (!PlaceGraveBlock(pos))
                 {
-                    PlaceGraveBlock(pos);
+                    api.Logger.Error($"[CORPSE] Failed to re-place protected grave at {pos}. Block '{graveBlockCode}' could not be resolved.");
                 }
 
                 // Remove the dropped skull entity near this position
@@ -666,7 +672,7 @@ namespace FirstStepsTweaks.Services
             RemoveTrackedGrave(pos);
 
             Block current = api.World.BlockAccessor.GetBlock(pos);
-            if (current != null && current.Code != null && current.Code.Path == gravePath)
+            if (IsGraveBlock(current))
             {
                 api.World.BlockAccessor.SetBlock(0, pos);
             }
@@ -968,7 +974,7 @@ namespace FirstStepsTweaks.Services
 
             Block block = api.World.BlockAccessor.GetBlock(pos);
             if (block == null || block.Code == null) return false;
-            if (block.Code.Path == gravePath) return false;
+            if (IsGraveBlock(block)) return false;
 
             return block.Replaceable >= 6000;
         }
@@ -1023,14 +1029,48 @@ namespace FirstStepsTweaks.Services
             }
         }
 
-        private void PlaceGraveBlock(BlockPos pos)
+        private bool PlaceGraveBlock(BlockPos pos)
         {
-            Block block = api.World.GetBlock(graveBlockCode);
-            if (block == null) return;
+            if (!TryResolveGraveBlock(out Block block))
+            {
+                return false;
+            }
 
             api.World.BlockAccessor.SetBlock(block.BlockId, pos);
             api.World.BlockAccessor.MarkBlockDirty(pos);
+            return true;
+        }
 
+        private bool TryResolveGraveBlock(out Block block)
+        {
+            block = api.World.GetBlock(graveBlockCode);
+            if (block != null)
+            {
+                missingGraveBlockLogged = false;
+                return true;
+            }
+
+            if (!missingGraveBlockLogged)
+            {
+                api.Logger.Error($"[CORPSE] Unable to resolve grave block '{graveBlockCode}'. Verify the deployed mod contains assets/{graveDomain}/blocktypes/{gravePath}.json (lower-case 'assets').");
+                missingGraveBlockLogged = true;
+            }
+
+            return false;
+        }
+
+        private bool IsGraveBlock(Block block)
+        {
+            return IsGraveCode(block?.Code);
+        }
+
+        private bool IsGraveCode(AssetLocation code)
+        {
+            if (code == null) return false;
+
+            return string.Equals(code.Domain, graveDomain, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(code.Path, gravePath, StringComparison.OrdinalIgnoreCase);
         }
     }
 }
+
