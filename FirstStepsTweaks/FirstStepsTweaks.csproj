@@ -1,39 +1,18 @@
-<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
-    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
-    <RootNamespace>FirstStepsTweaks</RootNamespace>
-    <RuntimeIdentifiers>win-x86;win-x64;win-arm64</RuntimeIdentifiers>
-    <UseWinUI>true</UseWinUI>
-    <WinUISDKReferences>false</WinUISDKReferences>
-    <Platforms>AnyCPU;x64</Platforms>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-  </PropertyGroup>
-  <ItemGroup>
-    <Content Remove="assets\firststepstweaks\lang\en.json" />
-  </ItemGroup>
-  <ItemGroup>
-    <None Remove="assets\firststepstweaks\blocktypes\gravestone.json" />
-  </ItemGroup>
-  <ItemGroup>
-    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.7705" />
-    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260209005" />
-  </ItemGroup>
-  <ItemGroup>
-    <Reference Include="VintagestoryAPI">
-      <HintPath>..\..\..\..\Desktop\VintagestoryAPI.dll</HintPath>
-    </Reference>
-    <Reference Include="VintagestoryServer">
-      <HintPath>..\..\..\..\Desktop\VintagestoryServer.dll</HintPath>
-    </Reference>
-  </ItemGroup>
-  <ItemGroup>
-    <Content Update="Assets\firststepstweaks\blocktypes\gravestone.json">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-  </ItemGroup>
-  <Target Name="PostBuild" AfterTargets="PostBuildEvent">
-    <Exec Command="set ModName=FirstStepsTweaks&#xD;&#xA;set ModsFolder=C:\Users\daytonwatson\AppData\Roaming\VSserverData\Mods&#xD;&#xA;&#xD;&#xA;echo Building mod zip...&#xD;&#xA;&#xD;&#xA;if not exist &quot;%25ModsFolder%25&quot; mkdir &quot;%25ModsFolder%25&quot;&#xD;&#xA;&#xD;&#xA;if exist &quot;%25ModsFolder%25\%25ModName%25.zip&quot; del &quot;%25ModsFolder%25\%25ModName%25.zip&quot;&#xD;&#xA;&#xD;&#xA;powershell -NoProfile -ExecutionPolicy Bypass -Command ^&#xD;&#xA;&quot;Compress-Archive -LiteralPath '$(TargetPath)','$(ProjectDir)modinfo.json','$(ProjectDir)assets' -DestinationPath '%25ModsFolder%25\%25ModName%25.zip' -Force&quot;&#xD;&#xA;&#xD;&#xA;echo Done." />
-  </Target>
-  
+﻿<Project Sdk="Microsoft.NET.Sdk">
+	<PropertyGroup>
+		<TargetFramework>net8.0</TargetFramework>
+		<RootNamespace>FirstStepsTweaks</RootNamespace>
+		<AssemblyName>FirstStepsTweaks</AssemblyName>
+		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+		<Platforms>AnyCPU</Platforms>
+		<PlatformTarget>AnyCPU</PlatformTarget>
+	</PropertyGroup>
+	<ItemGroup>
+		<Reference Include="VintagestoryAPI">
+			<HintPath>C:\Users\daytonwatson\Desktop\VintagestoryAPI.dll</HintPath>
+		</Reference>
+	</ItemGroup>
+	<Target Name="PostBuild" AfterTargets="Build">
+		<Exec Command="set ModName=FirstStepsTweaks&#xD;&#xA;set ModsFolder=C:\Users\daytonwatson\AppData\Roaming\VSserverData\Mods&#xD;&#xA;&#xD;&#xA;if exist &quot;%25ModsFolder%25\%25ModName%25.zip&quot; del &quot;%25ModsFolder%25\%25ModName%25.zip&quot;&#xD;&#xA;&#xD;&#xA;powershell -NoProfile -ExecutionPolicy Bypass -Command ^&#xD;&#xA;&quot;Compress-Archive -LiteralPath '$(TargetPath)','$(ProjectDir)modinfo.json','$(ProjectDir)assets' -DestinationPath '%25ModsFolder%25\%25ModName%25.zip' -Force&quot;" />
+	</Target>
 </Project>
