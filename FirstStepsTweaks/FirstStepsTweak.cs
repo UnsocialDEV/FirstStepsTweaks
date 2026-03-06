@@ -56,7 +56,11 @@ namespace FirstStepsTweaks
             if (config.Features.EnableTpaCommands) TpaCommands.Register(api, config);
             if (config.Features.EnableWarpCommands) WarpCommands.Register(api, config);
             if (config.Features.EnableRtpCommand) RtpCommands.Register(api, config);
-            if (config.Features.EnableUtilityCommands) UtilityCommands.Register(api, config);
+            if (config.Features.EnableUtilityCommands)
+            {
+                WhosOnlineCommand.Register(api, config);
+                WindCommand.Register(api, config);
+            }
             if (config.Features.EnableCorpseAdminCommands && corpseService != null)
             {
                 CorpseAdminCommands.Register(api, corpseService);
