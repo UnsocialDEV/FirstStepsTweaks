@@ -1,5 +1,6 @@
 {
   "code": "gravestone",
+  "name": "Player Gravestone",
   "blockMaterial": "stone",
   "RequiredMiningTier": 0,
   "resistance": 0.3,

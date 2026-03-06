@@ -43,6 +43,11 @@ namespace FirstStepsTweaks.Services
                 ClaimSnapshot currentClaim = GetClaimAtPlayerPosition(player);
 
                 if (previousClaim.Key == currentClaim.Key) continue;
+                if (IsTransitionBetweenPlayersOwnClaims(previousClaim, currentClaim, player))
+                {
+                    playerClaimByUid[player.PlayerUID] = currentClaim;
+                    continue;
+                }
 
                 if (previousClaim.Exists)
                 {
@@ -63,6 +68,20 @@ namespace FirstStepsTweaks.Services
                     playerClaimByUid.Remove(player.PlayerUID);
                 }
             }
+        }
+
+        private static bool IsTransitionBetweenPlayersOwnClaims(ClaimSnapshot previousClaim, ClaimSnapshot currentClaim, IServerPlayer player)
+        {
+            if (!previousClaim.Exists || !currentClaim.Exists || player == null) return false;
+            return IsOwnedByPlayer(previousClaim, player) && IsOwnedByPlayer(currentClaim, player);
+        }
+
+        private static bool IsOwnedByPlayer(ClaimSnapshot claim, IServerPlayer player)
+        {
+            return claim.Exists
+                && player != null
+                && !string.IsNullOrWhiteSpace(claim.OwnerUid)
+                && string.Equals(claim.OwnerUid, player.PlayerUID, StringComparison.OrdinalIgnoreCase);
         }
 
         private ClaimSnapshot GetClaimAtPlayerPosition(IServerPlayer player)

@@ -1,9 +1,10 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using FirstStepsTweaks.Config;
 using Vintagestory.API.Common;
 using Vintagestory.API.Config;
+using Vintagestory.API.Datastructures;
 using Vintagestory.API.MathTools;
 using Vintagestory.API.Server;
 
@@ -12,6 +13,7 @@ namespace FirstStepsTweaks.Commands
     public static class UtilityCommands
     {
         private static UtilityConfig utilityConfig = new UtilityConfig();
+
         public static void Register(ICoreServerAPI api, FirstStepsTweaksConfig config)
         {
             utilityConfig = config?.Utility ?? new UtilityConfig();
