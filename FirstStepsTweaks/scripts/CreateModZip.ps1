@@ -39,9 +39,39 @@ Get-ChildItem -LiteralPath $targetDir -File | ForEach-Object {
     Copy-Item -LiteralPath $_.FullName -Destination (Join-Path -Path $stagingRoot -ChildPath $_.Name) -Force
 }
 
-$assetsPath = Join-Path -Path $targetDir -ChildPath 'assets'
-if (Test-Path -LiteralPath $assetsPath) {
-    Copy-Item -LiteralPath $assetsPath -Destination (Join-Path -Path $stagingRoot -ChildPath 'assets') -Recurse -Force
+$stagingAssetsPath = Join-Path -Path $stagingRoot -ChildPath 'assets'
+$projectAssetsPath = Join-Path -Path $ProjectDir -ChildPath 'assets'
+$assetsSourcePath = $null
+
+# Prefer source-controlled assets so packaging is deterministic across OS/build targets.
+if (Test-Path -LiteralPath $projectAssetsPath) {
+    $assetsSourcePath = $projectAssetsPath
+}
+else {
+    foreach ($candidateName in @('assets', 'Assets')) {
+        $candidatePath = Join-Path -Path $targetDir -ChildPath $candidateName
+        if (Test-Path -LiteralPath $candidatePath) {
+            $assetsSourcePath = $candidatePath
+            break
+        }
+    }
+}
+
+if ($assetsSourcePath -and (Test-Path -LiteralPath $assetsSourcePath)) {
+    Get-ChildItem -LiteralPath $assetsSourcePath -File -Recurse | ForEach-Object {
+        $relativePath = ($_.FullName.Substring($assetsSourcePath.Length) -replace '^[\\/]+', '')
+        if ($relativePath.StartsWith("assets/", [System.StringComparison]::OrdinalIgnoreCase) -or $relativePath.StartsWith("assets\\", [System.StringComparison]::OrdinalIgnoreCase)) {
+            return
+        }
+
+        $destinationPath = Join-Path -Path $stagingAssetsPath -ChildPath $relativePath
+        $destinationDir = Split-Path -Path $destinationPath -Parent
+        if (-not (Test-Path -LiteralPath $destinationDir)) {
+            New-Item -ItemType Directory -Path $destinationDir -Force | Out-Null
+        }
+
+        Copy-Item -LiteralPath $_.FullName -Destination $destinationPath -Force
+    }
 }
 
 if (-not (Test-Path -LiteralPath (Join-Path -Path $stagingRoot -ChildPath 'modinfo.json'))) {
@@ -60,6 +90,27 @@ if (Test-Path -LiteralPath $zipPath) {
     Remove-Item -LiteralPath $zipPath -Force
 }
 
-Compress-Archive -Path (Join-Path -Path $stagingRoot -ChildPath '*') -DestinationPath $zipPath -CompressionLevel Optimal -Force
+Add-Type -AssemblyName System.IO.Compression
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+
+$stagingRootFullPath = [System.IO.Path]::GetFullPath($stagingRoot)
+$zipArchive = [System.IO.Compression.ZipFile]::Open($zipPath, [System.IO.Compression.ZipArchiveMode]::Create)
+try {
+    Get-ChildItem -LiteralPath $stagingRootFullPath -File -Recurse | ForEach-Object {
+        $relativePath = $_.FullName.Substring($stagingRootFullPath.Length).TrimStart('\', '/')
+        $zipEntryName = $relativePath -replace '\\', '/'
+
+        [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+            $zipArchive,
+            $_.FullName,
+            $zipEntryName,
+            [System.IO.Compression.CompressionLevel]::Optimal
+        ) | Out-Null
+    }
+}
+finally {
+    $zipArchive.Dispose()
+}
 
 Write-Host "Created mod zip: $zipPath"
+

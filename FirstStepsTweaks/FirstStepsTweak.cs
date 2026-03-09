@@ -9,6 +9,8 @@ namespace FirstStepsTweaks
 {
     public class FirstStepsTweaks : ModSystem
     {
+        private const string ConfigFileName = "firststepstweaks.json";
+        private const string LegacyConfigFileName = "FirstStepsTweaks.json";
         private static readonly AssetLocation DonatorSpearCode = new AssetLocation("firststepstweaks", "donator-spear");
 
         private DiscordBridge discord;
@@ -74,15 +76,23 @@ namespace FirstStepsTweaks
 
         private FirstStepsTweaksConfig LoadConfig(ICoreServerAPI api)
         {
-            const string fileName = "FirstStepsTweaks.json";
-            var config = api.LoadModConfig<FirstStepsTweaksConfig>(fileName);
-            if (config == null)
+            var config = api.LoadModConfig<FirstStepsTweaksConfig>(ConfigFileName);
+            if (config != null)
             {
-                config = new FirstStepsTweaksConfig();
-                api.StoreModConfig(config, fileName);
-                api.Logger.Warning("[FirstStepsTweaks] Created config file FirstStepsTweaks.json. Review and adjust as needed.");
+                return config;
             }
 
+            config = api.LoadModConfig<FirstStepsTweaksConfig>(LegacyConfigFileName);
+            if (config != null)
+            {
+                api.StoreModConfig(config, ConfigFileName);
+                api.Logger.Notification($"[FirstStepsTweaks] Migrated config file '{LegacyConfigFileName}' to '{ConfigFileName}' for cross-platform compatibility.");
+                return config;
+            }
+
+            config = new FirstStepsTweaksConfig();
+            api.StoreModConfig(config, ConfigFileName);
+            api.Logger.Warning($"[FirstStepsTweaks] Created config file {ConfigFileName}. Review and adjust as needed.");
             return config;
         }
 
@@ -131,10 +141,3 @@ namespace FirstStepsTweaks
         }
     }
 }
-
-
-
-
-
-
-

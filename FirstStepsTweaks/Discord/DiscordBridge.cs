@@ -23,6 +23,8 @@ namespace FirstStepsTweaks.Discord
         private static readonly HttpClient http = new HttpClient();
         private readonly SemaphoreSlim pollLock = new SemaphoreSlim(1, 1);
 
+        private const string DiscordConfigFileName = "firststepstweaks.discord.json";
+        private const string LegacyDiscordConfigFileName = "FirstStepsTweaks.Discord.json";
         private const string DiscordLastIdKey = "fst_discord_lastmsgid";
         private string lastMessageId;
 
@@ -62,14 +64,23 @@ namespace FirstStepsTweaks.Discord
 
         private void LoadConfig()
         {
-            config = api.LoadModConfig<DiscordBridgeConfig>("FirstStepsTweaks.Discord.json");
-
-            if (config == null)
+            config = api.LoadModConfig<DiscordBridgeConfig>(DiscordConfigFileName);
+            if (config != null)
             {
-                config = new DiscordBridgeConfig();
-                api.StoreModConfig(config, "FirstStepsTweaks.Discord.json");
-                api.Logger.Warning("[FirstStepsTweaks] Created Discord config. Fill it in and restart.");
+                return;
             }
+
+            config = api.LoadModConfig<DiscordBridgeConfig>(LegacyDiscordConfigFileName);
+            if (config != null)
+            {
+                api.StoreModConfig(config, DiscordConfigFileName);
+                api.Logger.Notification($"[FirstStepsTweaks] Migrated Discord config file '{LegacyDiscordConfigFileName}' to '{DiscordConfigFileName}' for cross-platform compatibility.");
+                return;
+            }
+
+            config = new DiscordBridgeConfig();
+            api.StoreModConfig(config, DiscordConfigFileName);
+            api.Logger.Warning($"[FirstStepsTweaks] Created Discord config file {DiscordConfigFileName}. Fill it in and restart.");
         }
 
         private void RestoreLastMessageId()
@@ -645,6 +656,3 @@ namespace FirstStepsTweaks.Discord
         }
     }
 }
-
-
-
