@@ -59,7 +59,8 @@ namespace FirstStepsTweaks.Commands
                 {
                     bool isAdmin = adminNames.Contains(player.PlayerName);
                     string adminTag = isAdmin ? " [ADMIN]" : string.Empty;
-                    return $"{index + 1}. {player.PlayerName}{adminTag} ({player.Ping}ms)";
+                    int pingMs = (int)Math.Max(0, Math.Round(player.Ping * 1000d));
+                    return $"{index + 1}. {player.PlayerName}{adminTag} ({pingMs}ms)";
                 })
                 .ToArray();
 
@@ -82,3 +83,4 @@ namespace FirstStepsTweaks.Commands
         }
     }
 }
+
