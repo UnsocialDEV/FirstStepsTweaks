@@ -3,6 +3,7 @@ using System;
 using System.Linq;
 using System.Text;
 using Vintagestory.API.Common;
+using Vintagestory.API.Common.Entities;
 using Vintagestory.API.Config;
 using Vintagestory.API.Server;
 
@@ -11,6 +12,7 @@ namespace FirstStepsTweaks.Commands
     public static class GravestoneCommands
     {
         private const string AdminPrivilege = "firststepstweaks.graveadmin";
+        private const string CurrentLocationSelector = "currentloc";
 
         private static GravestoneService gravestoneService;
 
@@ -36,7 +38,7 @@ namespace FirstStepsTweaks.Commands
                     .HandleWith(args => GiveBlock(api, args))
                 .EndSubCommand()
                 .BeginSubCommand("dupeitems")
-                    .WithDescription("Duplicate stored gravestone items to a player without removing the gravestone")
+                    .WithDescription("Duplicate stored gravestone items to a player without removing the gravestone. Use currentloc <player> while looking at a gravestone, or <graveId> <player>.")
                     .WithArgs(
                         api.ChatCommands.Parsers.Word("graveId"),
                         api.ChatCommands.Parsers.Word("player")
@@ -44,7 +46,7 @@ namespace FirstStepsTweaks.Commands
                     .HandleWith(args => DuplicateItems(api, args))
                 .EndSubCommand()
                 .BeginSubCommand("restore")
-                    .WithDescription("Restore gravestone items to a player and remove the gravestone")
+                    .WithDescription("Restore gravestone items to a player and remove the gravestone. Use currentloc <player> while looking at a gravestone, or <graveId> <player>.")
                     .WithArgs(
                         api.ChatCommands.Parsers.Word("graveId"),
                         api.ChatCommands.Parsers.Word("player")
@@ -52,9 +54,14 @@ namespace FirstStepsTweaks.Commands
                     .HandleWith(args => Restore(api, args))
                 .EndSubCommand()
                 .BeginSubCommand("remove")
-                    .WithDescription("Remove a gravestone by id without restoring items")
-                    .WithArgs(api.ChatCommands.Parsers.Word("graveId"))
+                    .WithDescription("Remove a gravestone without restoring items. Use currentloc while looking at a gravestone, or provide <graveId>.")
+                    .WithArgs(api.ChatCommands.Parsers.OptionalWord("graveId"))
                     .HandleWith(args => Remove(api, args))
+                .EndSubCommand()
+                .BeginSubCommand("teleport")
+                    .WithDescription("Teleport directly to a gravestone. Use currentloc while looking at a gravestone, or provide <graveId>.")
+                    .WithArgs(api.ChatCommands.Parsers.OptionalWord("graveId"))
+                    .HandleWith(args => Teleport(api, args))
                 .EndSubCommand();
         }
 
@@ -128,8 +135,14 @@ namespace FirstStepsTweaks.Commands
         private static TextCommandResult DuplicateItems(ICoreServerAPI api, TextCommandCallingArgs args)
         {
             IServerPlayer caller = args.Caller.Player as IServerPlayer;
-            string graveId = args[0] as string;
+            string graveSelector = args[0] as string;
             string targetName = args[1] as string;
+
+            if (!TryResolveGraveSelector(caller, graveSelector, out string graveId, out string resolveMessage))
+            {
+                SendBoth(caller, resolveMessage);
+                return TextCommandResult.Success();
+            }
 
             IServerPlayer target = ResolveOnlinePlayer(api, targetName);
             if (target == null)
@@ -152,8 +165,14 @@ namespace FirstStepsTweaks.Commands
         private static TextCommandResult Restore(ICoreServerAPI api, TextCommandCallingArgs args)
         {
             IServerPlayer caller = args.Caller.Player as IServerPlayer;
-            string graveId = args[0] as string;
+            string graveSelector = args[0] as string;
             string targetName = args[1] as string;
+
+            if (!TryResolveGraveSelector(caller, graveSelector, out string graveId, out string resolveMessage))
+            {
+                SendBoth(caller, resolveMessage);
+                return TextCommandResult.Success();
+            }
 
             IServerPlayer target = ResolveOnlinePlayer(api, targetName);
             if (target == null)
@@ -176,12 +195,90 @@ namespace FirstStepsTweaks.Commands
         private static TextCommandResult Remove(ICoreServerAPI api, TextCommandCallingArgs args)
         {
             IServerPlayer caller = args.Caller.Player as IServerPlayer;
-            string graveId = args[0] as string;
+            string graveSelector = args[0] as string;
+
+            if (string.IsNullOrWhiteSpace(graveSelector))
+            {
+                SendBoth(caller, "Usage: /graveadmin remove currentloc while looking at a gravestone, or /graveadmin remove <graveId>.");
+                return TextCommandResult.Success();
+            }
+
+            if (!TryResolveGraveSelector(caller, graveSelector, out string graveId, out string resolveMessage))
+            {
+                SendBoth(caller, resolveMessage);
+                return TextCommandResult.Success();
+            }
 
             bool success = gravestoneService.TryRemoveGrave(graveId, out string message);
             SendBoth(caller, message);
 
             return TextCommandResult.Success();
+        }
+
+        private static TextCommandResult Teleport(ICoreServerAPI api, TextCommandCallingArgs args)
+        {
+            IServerPlayer caller = args.Caller.Player as IServerPlayer;
+            string graveSelector = args[0] as string;
+
+            if (string.IsNullOrWhiteSpace(graveSelector))
+            {
+                SendBoth(caller, "Usage: /graveadmin teleport currentloc while looking at a gravestone, or /graveadmin teleport <graveId>.");
+                return TextCommandResult.Success();
+            }
+
+            if (!TryResolveGraveSelector(caller, graveSelector, out string graveId, out string resolveMessage))
+            {
+                SendBoth(caller, resolveMessage);
+                return TextCommandResult.Success();
+            }
+
+            if (!gravestoneService.TryGetTeleportTarget(graveId, out GraveData grave, out var target, out string message))
+            {
+                SendBoth(caller, message);
+                return TextCommandResult.Success();
+            }
+
+            if (!(caller?.Entity is EntityPlayer entityPlayer))
+            {
+                SendBoth(caller, "Teleport is only available to in-game players.");
+                return TextCommandResult.Success();
+            }
+
+            BackCommands.RecordCurrentLocation(caller);
+
+            if (entityPlayer.Pos != null && entityPlayer.Pos.Dimension != grave.Dimension)
+            {
+                entityPlayer.ChangeDimension(grave.Dimension);
+            }
+
+            entityPlayer.TeleportToDouble(
+                target.X,
+                target.Y,
+                target.Z,
+                () => SendBoth(caller, $"Teleported to gravestone '{grave.GraveId}' at {grave.Dimension}:{grave.X},{grave.Y},{grave.Z}.")
+            );
+
+            return TextCommandResult.Success();
+        }
+
+        private static bool TryResolveGraveSelector(IServerPlayer caller, string selector, out string graveId, out string message)
+        {
+            graveId = string.Empty;
+            message = string.Empty;
+
+            if (string.IsNullOrWhiteSpace(selector))
+            {
+                message = "Specify a grave ID or use currentloc while looking at a gravestone.";
+                return false;
+            }
+
+            if (selector.Equals(CurrentLocationSelector, StringComparison.OrdinalIgnoreCase))
+            {
+                return gravestoneService.TryResolveTargetedGraveId(caller, out graveId, out message);
+            }
+
+            graveId = selector;
+            return true;
         }
 
         private static IServerPlayer ResolveOnlinePlayer(ICoreServerAPI api, string query)

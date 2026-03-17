@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using Vintagestory.API.Common;
 using Vintagestory.API.Common.Entities;
 using Vintagestory.API.Config;
@@ -134,6 +135,62 @@ namespace FirstStepsTweaks.Services
             }
         }
 
+        public bool TryResolveTargetedGraveId(IServerPlayer player, out string graveId, out string message)
+        {
+            graveId = string.Empty;
+            message = string.Empty;
+
+            if (player == null)
+            {
+                message = "Only players can resolve a gravestone from what they are looking at.";
+                return false;
+            }
+
+            BlockSelection blockSelection = player.CurrentBlockSelection;
+            if (blockSelection?.Position == null)
+            {
+                message = "Look directly at a valid gravestone or specify the grave ID.";
+                return false;
+            }
+
+            if (!graveManager.TryGetByPosition(blockSelection.Position, out GraveData grave) || grave == null)
+            {
+                message = "The block you are looking at is not a tracked gravestone. Specify the grave ID instead.";
+                return false;
+            }
+
+            graveId = grave.GraveId;
+            return true;
+        }
+
+        public bool TryGetTeleportTarget(string graveId, out GraveData grave, out Vec3d target, out string message)
+        {
+            grave = null;
+            target = null;
+            message = string.Empty;
+
+            if (string.IsNullOrWhiteSpace(graveId))
+            {
+                message = "Invalid gravestone id.";
+                return false;
+            }
+
+            if (!graveManager.TryGetById(graveId, out grave) || grave == null)
+            {
+                message = $"Gravestone '{graveId}' was not found.";
+                return false;
+            }
+
+            target = FindSafeTeleportTarget(grave);
+            if (target == null)
+            {
+                message = $"Unable to find a safe teleport destination for gravestone '{graveId}'.";
+                return false;
+            }
+
+            return true;
+        }
+
         private void OnEntityDeath(Entity entity, DamageSource damageSource)
         {
             if (!(entity is EntityPlayer entityPlayer))
@@ -168,7 +225,8 @@ namespace FirstStepsTweaks.Services
             bool debugCycleActive = TryStartDebugTraceCycle(graveId);
 
             BlockPos deathPos = player.Entity.Pos.AsBlockPos.Copy();
-            BlockPos gravePos = FindPlacementPosition(deathPos, graveBlock);
+            GravePlacementResult placement = FindPlacementPosition(player, deathPos, graveBlock);
+            BlockPos gravePos = placement.Position;
             long nowUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
             var grave = new GraveData
@@ -200,6 +258,14 @@ namespace FirstStepsTweaks.Services
 
             RemoveSnapshottedItems(player, snapshots, graveId, debugCycleActive);
             EnsureGraveBlock(grave);
+
+            if (placement.MovedOutsideForeignClaim)
+            {
+                string alertMessage = "You died inside a land claim you do not own, so your gravestone was placed outside the claim "
+                    + $"at {gravePos.X}, {gravePos.Y}, {gravePos.Z}.";
+                player.SendMessage(GlobalConstants.InfoLogChatGroup, alertMessage, EnumChatType.CommandSuccess);
+                player.SendMessage(GlobalConstants.GeneralChatGroup, alertMessage, EnumChatType.Notification);
+            }
 
             string message = "Your items were stored in a gravestone, they will be protected for 60 minutes";
             player.SendMessage(GlobalConstants.InfoLogChatGroup, message, EnumChatType.CommandSuccess);
@@ -1032,30 +1098,200 @@ namespace FirstStepsTweaks.Services
             return cachedGraveBlock;
         }
 
-        private BlockPos FindPlacementPosition(BlockPos deathPos, Block graveBlock)
+        private GravePlacementResult FindPlacementPosition(IServerPlayer player, BlockPos deathPos, Block graveBlock)
         {
             if (deathPos == null)
             {
-                return new BlockPos(0);
+                return new GravePlacementResult(new BlockPos(0), false);
             }
+
+            bool diedInForeignClaim = IsForeignClaimAtPosition(player, deathPos);
+            BlockPos fallback = deathPos.UpCopy(1);
 
             int[] xOffsets = { 0, 1, -1, 0, 0, 1, 1, -1, -1 };
             int[] zOffsets = { 0, 0, 0, 1, -1, 1, -1, 1, -1 };
 
-            for (int yOffset = 0; yOffset <= 3; yOffset++)
+            if (!diedInForeignClaim)
             {
-                for (int i = 0; i < xOffsets.Length; i++)
+                for (int yOffset = 0; yOffset <= 3; yOffset++)
                 {
-                    BlockPos candidate = deathPos.AddCopy(xOffsets[i], yOffset, zOffsets[i]);
-                    Block existing = api.World.BlockAccessor.GetBlock(candidate);
-                    if (existing == null || existing.IsReplacableBy(graveBlock))
+                    for (int i = 0; i < xOffsets.Length; i++)
                     {
-                        return candidate;
+                        BlockPos candidate = deathPos.AddCopy(xOffsets[i], yOffset, zOffsets[i]);
+                        if (CanPlaceGraveAt(player, candidate, graveBlock))
+                        {
+                            return new GravePlacementResult(candidate, false);
+                        }
                     }
                 }
             }
 
-            return deathPos.UpCopy(1);
+            const int searchRadius = 64;
+            int[] ySearchOffsets = { 0, 1, 2, 3, -1, -2 };
+
+            for (int radius = 1; radius <= searchRadius; radius++)
+            {
+                foreach (BlockPos edgePos in EnumerateSquareEdge(deathPos, radius))
+                {
+                    foreach (int yOffset in ySearchOffsets)
+                    {
+                        BlockPos candidate = edgePos.AddCopy(0, yOffset, 0);
+                        if (!CanPlaceGraveAt(player, candidate, graveBlock))
+                        {
+                            continue;
+                        }
+
+                        bool movedOutsideForeignClaim = diedInForeignClaim
+                            && !PositionsEqual(candidate, deathPos);
+
+                        return new GravePlacementResult(candidate, movedOutsideForeignClaim);
+                    }
+                }
+            }
+
+            if (diedInForeignClaim)
+            {
+                for (int verticalOffset = 1; verticalOffset <= 4; verticalOffset++)
+                {
+                    BlockPos candidate = deathPos.UpCopy(verticalOffset);
+                    if (CanPlaceGraveAt(player, candidate, graveBlock))
+                    {
+                        return new GravePlacementResult(candidate, false);
+                    }
+                }
+            }
+
+            return new GravePlacementResult(fallback, false);
+        }
+
+        private bool CanPlaceGraveAt(IServerPlayer player, BlockPos candidate, Block graveBlock)
+        {
+            if (candidate == null || graveBlock == null)
+            {
+                return false;
+            }
+
+            if (IsForeignClaimAtPosition(player, candidate))
+            {
+                return false;
+            }
+
+            Block existing = api.World.BlockAccessor.GetBlock(candidate);
+            return existing == null || existing.IsReplacableBy(graveBlock);
+        }
+
+        private bool IsForeignClaimAtPosition(IServerPlayer player, BlockPos pos)
+        {
+            LandClaimInfo claim = GetClaimAtPosition(pos);
+            if (!claim.Exists)
+            {
+                return false;
+            }
+
+            return player == null
+                || string.IsNullOrWhiteSpace(claim.OwnerUid)
+                || !string.Equals(claim.OwnerUid, player.PlayerUID, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private LandClaimInfo GetClaimAtPosition(BlockPos pos)
+        {
+            if (pos == null)
+            {
+                return LandClaimInfo.None;
+            }
+
+            object claimsApi = api.World?.GetType().GetProperty("Claims", BindingFlags.Instance | BindingFlags.Public)?.GetValue(api.World);
+            if (claimsApi == null)
+            {
+                return LandClaimInfo.None;
+            }
+
+            object claim = ResolveClaim(claimsApi, pos);
+            return claim == null ? LandClaimInfo.None : LandClaimInfo.FromClaim(claim);
+        }
+
+        private static object ResolveClaim(object claimsApi, BlockPos pos)
+        {
+            MethodInfo[] methods = claimsApi.GetType().GetMethods(BindingFlags.Instance | BindingFlags.Public);
+
+            foreach (string methodName in new[] { "Get", "GetClaimsAt", "GetAt", "GetCurrentClaims" })
+            {
+                MethodInfo method = methods.FirstOrDefault(m =>
+                    m.Name == methodName
+                    && m.GetParameters().Length == 1
+                    && IsPositionParameter(m.GetParameters()[0].ParameterType));
+
+                if (method == null)
+                {
+                    continue;
+                }
+
+                object result = method.Invoke(claimsApi, new object[] { pos });
+                object claim = PickSingleClaim(result);
+                if (claim != null)
+                {
+                    return claim;
+                }
+            }
+
+            return null;
+        }
+
+        private static bool IsPositionParameter(Type paramType)
+        {
+            return typeof(BlockPos).IsAssignableFrom(paramType)
+                || paramType.Name.Contains("BlockPos", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static object PickSingleClaim(object result)
+        {
+            if (result == null || result is string)
+            {
+                return null;
+            }
+
+            if (result is System.Collections.IEnumerable enumerable)
+            {
+                foreach (object entry in enumerable)
+                {
+                    if (entry != null)
+                    {
+                        return entry;
+                    }
+                }
+
+                return null;
+            }
+
+            return result;
+        }
+
+        private static IEnumerable<BlockPos> EnumerateSquareEdge(BlockPos center, int radius)
+        {
+            for (int x = center.X - radius; x <= center.X + radius; x++)
+            {
+                yield return new BlockPos(x, center.Y, center.Z - radius, center.dimension);
+                yield return new BlockPos(x, center.Y, center.Z + radius, center.dimension);
+            }
+
+            for (int z = center.Z - radius + 1; z <= center.Z + radius - 1; z++)
+            {
+                yield return new BlockPos(center.X - radius, center.Y, z, center.dimension);
+                yield return new BlockPos(center.X + radius, center.Y, z, center.dimension);
+            }
+        }
+
+        private static bool PositionsEqual(BlockPos left, BlockPos right)
+        {
+            if (left == null || right == null)
+            {
+                return false;
+            }
+
+            return left.dimension == right.dimension
+                && left.X == right.X
+                && left.Y == right.Y
+                && left.Z == right.Z;
         }
 
         private void EnsureGraveBlock(GraveData grave)
@@ -1099,54 +1335,130 @@ namespace FirstStepsTweaks.Services
                 api.World.BlockAccessor.SetBlock(0, pos);
             }
         }
+
+        private Vec3d FindSafeTeleportTarget(GraveData grave)
+        {
+            if (grave == null)
+            {
+                return null;
+            }
+
+            BlockPos gravePos = grave.ToBlockPos();
+            int[] xOffsets = { 0, 1, -1, 0, 0, 1, 1, -1, -1 };
+            int[] zOffsets = { 0, 0, 0, 1, -1, 1, -1, 1, -1 };
+
+            for (int yOffset = 1; yOffset <= 4; yOffset++)
+            {
+                for (int i = 0; i < xOffsets.Length; i++)
+                {
+                    BlockPos feetPos = gravePos.AddCopy(xOffsets[i], yOffset, zOffsets[i]);
+                    BlockPos headPos = feetPos.UpCopy(1);
+                    BlockPos groundPos = feetPos.DownCopy(1);
+
+                    Block feetBlock = api.World.BlockAccessor.GetBlock(feetPos);
+                    Block headBlock = api.World.BlockAccessor.GetBlock(headPos);
+                    Block groundBlock = api.World.BlockAccessor.GetBlock(groundPos);
+
+                    if (!IsPassableTeleportSpace(feetBlock) || !IsPassableTeleportSpace(headBlock))
+                    {
+                        continue;
+                    }
+
+                    if (!IsSafeTeleportGround(groundBlock))
+                    {
+                        continue;
+                    }
+
+                    return new Vec3d(feetPos.X + 0.5, feetPos.Y, feetPos.Z + 0.5);
+                }
+            }
+
+            return new Vec3d(gravePos.X + 0.5, gravePos.Y + 1, gravePos.Z + 0.5);
+        }
+
+        private static bool IsPassableTeleportSpace(Block block)
+        {
+            return block != null && (block.BlockId == 0 || block.Replaceable >= 6000);
+        }
+
+        private static bool IsSafeTeleportGround(Block block)
+        {
+            return block != null && block.BlockId != 0 && block.Replaceable < 6000;
+        }
+
+        private readonly struct GravePlacementResult
+        {
+            public readonly BlockPos Position;
+            public readonly bool MovedOutsideForeignClaim;
+
+            public GravePlacementResult(BlockPos position, bool movedOutsideForeignClaim)
+            {
+                Position = position;
+                MovedOutsideForeignClaim = movedOutsideForeignClaim;
+            }
+        }
+
+        private readonly struct LandClaimInfo
+        {
+            public static LandClaimInfo None => new LandClaimInfo(null, null, null);
+
+            public readonly string Key;
+            public readonly string OwnerUid;
+            public readonly string OwnerName;
+
+            public bool Exists => !string.IsNullOrWhiteSpace(Key);
+
+            private LandClaimInfo(string key, string ownerUid, string ownerName)
+            {
+                Key = key;
+                OwnerUid = ownerUid;
+                OwnerName = ownerName;
+            }
+
+            public static LandClaimInfo FromClaim(object claim)
+            {
+                string key = ReadStringOrNull(claim, "ClaimId", "Id", "ProtectionId", "LandClaimId");
+                if (string.IsNullOrWhiteSpace(key))
+                {
+                    key = claim?.GetHashCode().ToString() ?? string.Empty;
+                }
+
+                string ownerUid = ReadStringOrNull(claim, "OwnedByPlayerUid", "OwnerUid", "OwnerPlayerUid", "PlayerUid", "Uid");
+                string ownerName = ReadStringOrNull(claim, "OwnedByPlayerName", "OwnerName", "OwnerPlayerName", "LastKnownOwnerName", "PlayerName");
+                return new LandClaimInfo(key, ownerUid, ownerName);
+            }
+
+            private static string ReadStringOrNull(object obj, params string[] names)
+            {
+                object value = ReadObjectOrNull(obj, names);
+                return value?.ToString();
+            }
+
+            private static object ReadObjectOrNull(object obj, params string[] names)
+            {
+                if (obj == null || names == null || names.Length == 0)
+                {
+                    return null;
+                }
+
+                Type type = obj.GetType();
+                foreach (string name in names)
+                {
+                    PropertyInfo property = type.GetProperty(name, BindingFlags.Public | BindingFlags.Instance);
+                    if (property != null)
+                    {
+                        return property.GetValue(obj);
+                    }
+
+                    FieldInfo field = type.GetField(name, BindingFlags.Public | BindingFlags.Instance);
+                    if (field != null)
+                    {
+                        return field.GetValue(obj);
+                    }
+                }
+
+                return null;
+            }
+        }
     }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

@@ -37,6 +37,7 @@ namespace FirstStepsTweaks
             if (config.Features.EnableCorpseService)
             {
                 gravestoneService = new GravestoneService(api, config);
+                WhereIsMyGraveCommand.Register(api, gravestoneService);
 
                 if (config.Features.EnableCorpseAdminCommands)
                 {
