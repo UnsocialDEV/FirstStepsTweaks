@@ -1,166 +1,107 @@
 using System;
 using FirstStepsTweaks.Config;
+using FirstStepsTweaks.Infrastructure.Messaging;
+using FirstStepsTweaks.Infrastructure.Teleport;
 using FirstStepsTweaks.Services;
+using FirstStepsTweaks.Teleport;
 using Vintagestory.API.Common;
 using Vintagestory.API.Config;
 using Vintagestory.API.Server;
 
 namespace FirstStepsTweaks.Commands
 {
-    public static class SpawnCommands
+    public sealed class SpawnCommands
     {
-        private const string SpawnKey = "fst_spawnpos";
+        private readonly ICoreServerAPI api;
+        private readonly TeleportConfig teleportConfig;
+        private readonly SpawnStore spawnStore;
+        private readonly IPlayerMessenger messenger;
+        private readonly IBackLocationStore backLocationStore;
+        private readonly ITeleportWarmupService teleportWarmupService;
 
-        private static TeleportConfig teleportConfig = new TeleportConfig();
-
-        public static void Register(ICoreServerAPI api, FirstStepsTweaksConfig config)
+        public SpawnCommands(
+            ICoreServerAPI api,
+            FirstStepsTweaksConfig config,
+            SpawnStore spawnStore,
+            IPlayerMessenger messenger,
+            IBackLocationStore backLocationStore,
+            ITeleportWarmupService teleportWarmupService)
         {
+            this.api = api;
             teleportConfig = config?.Teleport ?? new TeleportConfig();
+            this.spawnStore = spawnStore;
+            this.messenger = messenger;
+            this.backLocationStore = backLocationStore;
+            this.teleportWarmupService = teleportWarmupService;
+        }
 
+        public void Register()
+        {
             api.ChatCommands
                 .Create("setspawn")
                 .WithDescription("Sets server spawn to your current location")
                 .RequiresPlayer()
                 .RequiresPrivilege(Privilege.controlserver)
-                .HandleWith(args => SetSpawn(api, args));
+                .HandleWith(SetSpawn);
 
             api.ChatCommands
                 .Create("spawn")
                 .WithDescription("Teleport to server spawn")
                 .RequiresPlayer()
                 .RequiresPrivilege(Privilege.chat)
-                .HandleWith(args => Spawn(api, args));
+                .HandleWith(Spawn);
         }
 
-        private static TextCommandResult SetSpawn(ICoreServerAPI api, TextCommandCallingArgs args)
+        private TextCommandResult SetSpawn(TextCommandCallingArgs args)
         {
             IServerPlayer player = (IServerPlayer)args.Caller.Player;
-
-            var pos = player.Entity.Pos;
-
-            double[] spawnData =
-            {
-                pos.X,
-                pos.Y,
-                pos.Z
-            };
-
-            api.WorldManager.SaveGame.StoreData(SpawnKey, spawnData);
-
-            player.SendMessage(
-                GlobalConstants.InfoLogChatGroup,
-                "Spawn position set.",
-                EnumChatType.CommandSuccess
-            );
-
-            player.SendMessage(
-                GlobalConstants.GeneralChatGroup,
-                "Spawn position set.",
-                EnumChatType.Notification
-            );
+            spawnStore.SetSpawn(player);
+            messenger.SendDual(player, "Spawn position set.", (int)EnumChatType.CommandSuccess, (int)EnumChatType.Notification);
 
             return TextCommandResult.Success();
         }
 
-        private static TextCommandResult Spawn(ICoreServerAPI api, TextCommandCallingArgs args)
+        private TextCommandResult Spawn(TextCommandCallingArgs args)
         {
             IServerPlayer player = (IServerPlayer)args.Caller.Player;
 
-            double[] spawnData = api.WorldManager.SaveGame.GetData<double[]>(SpawnKey);
-
-            if (spawnData == null || spawnData.Length != 3)
+            if (!spawnStore.TryGetSpawn(out var target))
             {
-                player.SendMessage(
-                    GlobalConstants.InfoLogChatGroup,
-                    "Spawn has not been set yet.",
-                    EnumChatType.CommandSuccess
-                );
-
-                player.SendMessage(
-                    GlobalConstants.GeneralChatGroup,
-                    "Spawn has not been set yet.",
-                    EnumChatType.Notification
-                );
+                messenger.SendDual(player, "Spawn has not been set yet.", (int)EnumChatType.CommandSuccess, (int)EnumChatType.Notification);
                 return TextCommandResult.Success();
             }
-
-            double targetX = spawnData[0];
-            double targetY = spawnData[1];
-            double targetZ = spawnData[2];
 
             if (teleportConfig.WarmupSeconds > 0 && TeleportBypass.HasBypass(player))
             {
                 TeleportBypass.NotifyBypassingCooldown(player, "/spawn warmup");
-                BackCommands.RecordCurrentLocation(player);
-                player.Entity.TeleportToDouble(targetX, targetY, targetZ);
-                player.SendIngameError("no_permission", "Teleported to spawn.");
+                backLocationStore.RecordCurrentLocation(player);
+                player.Entity.TeleportToDouble(target.X, target.Y, target.Z);
+                messenger.SendIngameError(player, "no_permission", "Teleported to spawn.");
                 return TextCommandResult.Success();
             }
 
-            double startX = player.Entity.Pos.X;
-            double startY = player.Entity.Pos.Y;
-            double startZ = player.Entity.Pos.Z;
-
-            int secondsRemaining = teleportConfig.WarmupSeconds;
-            long listenerId = 0;
-
-            player.SendMessage(
-                GlobalConstants.InfoLogChatGroup,
-                $"Teleporting you in {teleportConfig.WarmupSeconds} seconds. Do not move.",
-                EnumChatType.CommandSuccess
-                );
-
-            player.SendMessage(
-                GlobalConstants.GeneralChatGroup,
-                $"Teleporting you in {teleportConfig.WarmupSeconds} seconds. Do not move.",
-                EnumChatType.Notification
-                );
-
-            listenerId = api.Event.RegisterGameTickListener((dt) =>
+            teleportWarmupService.Begin(new TeleportWarmupRequest
             {
-                if (player?.Entity == null)
+                Player = player,
+                WarmupMessage = $"Teleporting you in {teleportConfig.WarmupSeconds} seconds. Do not move.",
+                CountdownTemplate = "Teleporting to spawn in {0}...",
+                CancelMessage = "Teleport cancelled because you moved.",
+                SuccessIngameMessage = "Teleported to spawn.",
+                BypassContext = "/spawn warmup",
+                WarmupSeconds = teleportConfig.WarmupSeconds,
+                TickIntervalMs = teleportConfig.TickIntervalMs,
+                CancelMoveThreshold = teleportConfig.CancelMoveThreshold,
+                WarmupInfoChatType = (int)EnumChatType.CommandSuccess,
+                WarmupGeneralGroupId = GlobalConstants.GeneralChatGroup,
+                WarmupGeneralChatType = (int)EnumChatType.Notification,
+                CancelInfoChatType = (int)EnumChatType.CommandSuccess,
+                CancelGeneralChatType = (int)EnumChatType.Notification,
+                ExecuteTeleport = () =>
                 {
-                    api.Event.UnregisterGameTickListener(listenerId);
-                    return;
+                    backLocationStore.RecordCurrentLocation(player);
+                    player.Entity.TeleportToDouble(target.X, target.Y, target.Z);
                 }
-
-                // Cancel if moved
-                double dx = Math.Abs(player.Entity.Pos.X - startX);
-                double dy = Math.Abs(player.Entity.Pos.Y - startY);
-                double dz = Math.Abs(player.Entity.Pos.Z - startZ);
-
-                if (dx > teleportConfig.CancelMoveThreshold || dy > teleportConfig.CancelMoveThreshold || dz > teleportConfig.CancelMoveThreshold)
-                {
-                    player.SendMessage(
-                        GlobalConstants.InfoLogChatGroup,
-                        "Teleport cancelled because you moved.",
-                        EnumChatType.CommandSuccess
-                    );
-
-                    player.SendMessage(
-                        GlobalConstants.GeneralChatGroup,
-                        "Teleport cancelled because you moved.",
-                        EnumChatType.Notification
-                    );
-
-                    api.Event.UnregisterGameTickListener(listenerId);
-                    return;
-                }
-
-                if (secondsRemaining > 0)
-                {
-                    player.SendIngameError("no_permission", $"Teleporting to spawn in {secondsRemaining}...");
-                    secondsRemaining--;
-                }
-                else
-                {
-                    BackCommands.RecordCurrentLocation(player);
-                    player.Entity.TeleportToDouble(targetX, targetY, targetZ);
-                    player.SendIngameError("no_permission", "Teleported to spawn.");
-                    api.Event.UnregisterGameTickListener(listenerId);
-                }
-
-            }, teleportConfig.TickIntervalMs);
+            });
 
             return TextCommandResult.Success();
         }

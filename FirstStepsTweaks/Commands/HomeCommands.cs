@@ -1,224 +1,135 @@
 using System;
 using FirstStepsTweaks.Config;
+using FirstStepsTweaks.Infrastructure.Messaging;
+using FirstStepsTweaks.Infrastructure.Teleport;
 using FirstStepsTweaks.Services;
+using FirstStepsTweaks.Teleport;
 using Vintagestory.API.Common;
 using Vintagestory.API.Config;
 using Vintagestory.API.Server;
 
 namespace FirstStepsTweaks.Commands
 {
-    public static class HomeCommands
+    public sealed class HomeCommands
     {
-        private const string HomeKey = "fst_homepos";
+        private readonly ICoreServerAPI api;
+        private readonly TeleportConfig teleportConfig;
+        private readonly HomeStore homeStore;
+        private readonly IPlayerMessenger messenger;
+        private readonly IBackLocationStore backLocationStore;
+        private readonly ITeleportWarmupService teleportWarmupService;
 
-        private static TeleportConfig teleportConfig = new TeleportConfig();
-
-        public static void Register(ICoreServerAPI api, FirstStepsTweaksConfig config)
+        public HomeCommands(
+            ICoreServerAPI api,
+            FirstStepsTweaksConfig config,
+            HomeStore homeStore,
+            IPlayerMessenger messenger,
+            IBackLocationStore backLocationStore,
+            ITeleportWarmupService teleportWarmupService)
         {
+            this.api = api;
             teleportConfig = config?.Teleport ?? new TeleportConfig();
+            this.homeStore = homeStore;
+            this.messenger = messenger;
+            this.backLocationStore = backLocationStore;
+            this.teleportWarmupService = teleportWarmupService;
+        }
 
+        public void Register()
+        {
             api.ChatCommands
                 .Create("sethome")
                 .RequiresPlayer()
                 .RequiresPrivilege(Privilege.chat)
-                .HandleWith(args => SetHome(api, args));
+                .HandleWith(SetHome);
 
             api.ChatCommands
                 .Create("home")
                 .RequiresPlayer()
                 .RequiresPrivilege(Privilege.chat)
-                .HandleWith(args => Home(api, args));
+                .HandleWith(Home);
 
             api.ChatCommands
                 .Create("delhome")
                 .RequiresPlayer()
                 .RequiresPrivilege(Privilege.chat)
-                .HandleWith(args => DelHome(api, args));
+                .HandleWith(DelHome);
         }
 
-        private static TextCommandResult SetHome(ICoreServerAPI api, TextCommandCallingArgs args)
+        private TextCommandResult SetHome(TextCommandCallingArgs args)
         {
             IServerPlayer player = args.Caller.Player as IServerPlayer;
 
-            if (player.GetModdata(HomeKey) != null)
+            if (homeStore.HasHome(player))
             {
-                player.SendMessage(
-                    GlobalConstants.InfoLogChatGroup,
-                    "You already have a home set. Use /delhome first.",
-                    EnumChatType.CommandSuccess
-                );
-
-                player.SendMessage(
-                    GlobalConstants.GeneralChatGroup,
-                    "You already have a home set. Use /delhome first.",
-                    EnumChatType.Notification
-                );
+                messenger.SendDual(player, "You already have a home set. Use /delhome first.", (int)EnumChatType.CommandSuccess, (int)EnumChatType.Notification);
                 return TextCommandResult.Success();
             }
 
-            var pos = player.Entity.Pos;
-
-            byte[] data = new byte[24];
-            BitConverter.GetBytes(pos.X).CopyTo(data, 0);
-            BitConverter.GetBytes(pos.Y).CopyTo(data, 8);
-            BitConverter.GetBytes(pos.Z).CopyTo(data, 16);
-
-            player.SetModdata(HomeKey, data);
-
-            player.SendMessage(
-                GlobalConstants.InfoLogChatGroup,
-                "Home set.",
-                EnumChatType.CommandSuccess
-            );
-
-            player.SendMessage(
-                GlobalConstants.GeneralChatGroup,
-                "Home set.",
-                EnumChatType.Notification
-            );
+            homeStore.SetHome(player);
+            messenger.SendDual(player, "Home set.", (int)EnumChatType.CommandSuccess, (int)EnumChatType.Notification);
 
             return TextCommandResult.Success();
         }
 
-        private static TextCommandResult Home(ICoreServerAPI api, TextCommandCallingArgs args)
+        private TextCommandResult Home(TextCommandCallingArgs args)
         {
             IServerPlayer player = args.Caller.Player as IServerPlayer;
 
-            byte[] data = player.GetModdata(HomeKey);
-
-            if (data == null || data.Length != 24)
+            if (!homeStore.TryGetHome(player, out var target))
             {
-                player.SendMessage(
-                    GlobalConstants.InfoLogChatGroup,
-                    "You do not have a valid home set.",
-                    EnumChatType.CommandSuccess
-                );
-
-                player.SendMessage(
-                    GlobalConstants.GeneralChatGroup,
-                    "You do not have a valid home set.",
-                    EnumChatType.Notification
-                );
+                messenger.SendDual(player, "You do not have a valid home set.", (int)EnumChatType.CommandSuccess, (int)EnumChatType.Notification);
                 return TextCommandResult.Success();
             }
-
-            double targetX = BitConverter.ToDouble(data, 0);
-            double targetY = BitConverter.ToDouble(data, 8);
-            double targetZ = BitConverter.ToDouble(data, 16);
 
             if (teleportConfig.WarmupSeconds > 0 && TeleportBypass.HasBypass(player))
             {
                 TeleportBypass.NotifyBypassingCooldown(player, "/home warmup");
-                BackCommands.RecordCurrentLocation(player);
-                player.Entity.TeleportToDouble(targetX, targetY, targetZ);
-                player.SendIngameError("no_permission", "Teleported home.");
+                backLocationStore.RecordCurrentLocation(player);
+                player.Entity.TeleportToDouble(target.X, target.Y, target.Z);
+                messenger.SendIngameError(player, "no_permission", "Teleported home.");
                 return TextCommandResult.Success();
             }
 
-            double startX = player.Entity.Pos.X;
-            double startY = player.Entity.Pos.Y;
-            double startZ = player.Entity.Pos.Z;
-
-            int secondsRemaining = teleportConfig.WarmupSeconds;
-            long listenerId = 0;
-
-            player.SendMessage(
-                GlobalConstants.InfoLogChatGroup,
-                $"Teleporting you home in {teleportConfig.WarmupSeconds} seconds. Do not move.",
-                EnumChatType.CommandSuccess
-                );
-
-            player.SendMessage(
-                GlobalConstants.GeneralChatGroup,
-                $"Teleporting you home in {teleportConfig.WarmupSeconds} seconds. Do not move.",
-                EnumChatType.Notification
-                );
-
-            listenerId = api.Event.RegisterGameTickListener((dt) =>
+            teleportWarmupService.Begin(new TeleportWarmupRequest
             {
-                if (player?.Entity == null)
+                Player = player,
+                WarmupMessage = $"Teleporting you home in {teleportConfig.WarmupSeconds} seconds. Do not move.",
+                CountdownTemplate = "Teleporting in {0}...",
+                CancelMessage = "Teleport cancelled because you moved.",
+                SuccessIngameMessage = "Teleported home.",
+                BypassContext = "/home warmup",
+                WarmupSeconds = teleportConfig.WarmupSeconds,
+                TickIntervalMs = teleportConfig.TickIntervalMs,
+                CancelMoveThreshold = teleportConfig.CancelMoveThreshold,
+                WarmupInfoChatType = (int)EnumChatType.CommandSuccess,
+                WarmupGeneralGroupId = GlobalConstants.GeneralChatGroup,
+                WarmupGeneralChatType = (int)EnumChatType.Notification,
+                CancelInfoChatType = (int)EnumChatType.CommandSuccess,
+                CancelGeneralChatType = (int)EnumChatType.Notification,
+                ExecuteTeleport = () =>
                 {
-                    api.Event.UnregisterGameTickListener(listenerId);
-                    return;
+                    backLocationStore.RecordCurrentLocation(player);
+                    player.Entity.TeleportToDouble(target.X, target.Y, target.Z);
                 }
-
-                // Cancel if moved
-                double dx = Math.Abs(player.Entity.Pos.X - startX);
-                double dy = Math.Abs(player.Entity.Pos.Y - startY);
-                double dz = Math.Abs(player.Entity.Pos.Z - startZ);
-
-                if (dx > teleportConfig.CancelMoveThreshold || dy > teleportConfig.CancelMoveThreshold || dz > teleportConfig.CancelMoveThreshold)
-                {
-                    player.SendMessage(
-                        GlobalConstants.InfoLogChatGroup,
-                        "Teleport cancelled because you moved.",
-                        EnumChatType.CommandSuccess
-                    );
-
-                    player.SendMessage(
-                        GlobalConstants.GeneralChatGroup,
-                        "Teleport cancelled because you moved.",
-                        EnumChatType.Notification
-                    );
-
-                    api.Event.UnregisterGameTickListener(listenerId);
-                    return;
-                }
-
-                if (secondsRemaining > 0)
-                {
-                    player.SendIngameError("no_permission", $"Teleporting in {secondsRemaining}...");
-
-                    secondsRemaining--;
-                }
-                else
-                {
-                    BackCommands.RecordCurrentLocation(player);
-                    player.Entity.TeleportToDouble(targetX, targetY, targetZ);
-
-                    player.SendIngameError("no_permission", "Teleported home.");
-
-                    api.Event.UnregisterGameTickListener(listenerId);
-                }
-
-            }, teleportConfig.TickIntervalMs);
+            });
 
             return TextCommandResult.Success();
         }
 
-        private static TextCommandResult DelHome(ICoreServerAPI api, TextCommandCallingArgs args)
+        private TextCommandResult DelHome(TextCommandCallingArgs args)
         {
             IServerPlayer player = args.Caller.Player as IServerPlayer;
 
-            if (player.GetModdata(HomeKey) == null)
+            if (!homeStore.HasHome(player))
             {
-                player.SendMessage(
-                    GlobalConstants.InfoLogChatGroup,
-                    "You do not have a home set.",
-                    EnumChatType.CommandSuccess
-                );
-
-                player.SendMessage(
-                    GlobalConstants.GeneralChatGroup,
-                    "You do not have a home set.",
-                    EnumChatType.Notification
-                );
+                messenger.SendDual(player, "You do not have a home set.", (int)EnumChatType.CommandSuccess, (int)EnumChatType.Notification);
                 return TextCommandResult.Success();
             }
 
-            player.SetModdata(HomeKey, null);
-
-            player.SendMessage(
-                GlobalConstants.InfoLogChatGroup,
-                "Home deleted.",
-                EnumChatType.CommandSuccess
-            );
-
-            player.SendMessage(
-                GlobalConstants.InfoLogChatGroup,
-                "Home deleted.",
-                EnumChatType.Notification
-            );
+            homeStore.ClearHome(player);
+            messenger.SendInfo(player, "Home deleted.", GlobalConstants.InfoLogChatGroup, (int)EnumChatType.CommandSuccess);
+            messenger.SendGeneral(player, "Home deleted.", GlobalConstants.InfoLogChatGroup, (int)EnumChatType.Notification);
 
             return TextCommandResult.Success();
         }

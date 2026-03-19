@@ -1,6 +1,7 @@
 using FirstStepsTweaks.Commands;
 using FirstStepsTweaks.Config;
 using FirstStepsTweaks.Discord;
+using FirstStepsTweaks.Features;
 using FirstStepsTweaks.Services;
 using Vintagestory.API.Common;
 using Vintagestory.API.Server;
@@ -11,67 +12,24 @@ namespace FirstStepsTweaks
     {
         private const string ConfigFileName = "firststepstweaks.json";
         private const string LegacyConfigFileName = "FirstStepsTweaks.json";
-        private static readonly AssetLocation DonatorSpearCode = new AssetLocation("firststepstweaks", "donator-spear");
+        private static readonly AssetLocation SupporterSpearCode = new AssetLocation("firststepstweaks", "supporter-spear");
 
-        private DiscordBridge discord;
-        private JoinService joinService;
-        private JoinInvulnerabilityService joinInvulnerabilityService;
-        private LandClaimNotificationService landClaimNotificationService;
-        private GravestoneService gravestoneService;
         public override void StartServerSide(ICoreServerAPI api)
         {
             var config = LoadConfig(api);
+            var runtime = new FeatureRuntime(api);
 
             registerPrivileges(api);
+            api.Event.MatchesGridRecipe += OnMatchesGridRecipe;
 
-            discord = new DiscordBridge(api);
-            joinService = new JoinService(api, config);
-            joinInvulnerabilityService = new JoinInvulnerabilityService(api);
-
-            if (config.Features.EnableBackCommand)
-            {
-                api.Event.OnEntityDeath += BackCommands.OnEntityDeath;
-                BackCommands.Register(api, config);
-            }
+            new JoinFeature(api, config, runtime).Register();
+            new TeleportFeature(api, config, runtime).Register();
+            new DiscordFeature(api, config, runtime).Register();
+            new UtilityFeature(api, config, runtime).Register();
 
             if (config.Features.EnableCorpseService)
             {
-                gravestoneService = new GravestoneService(api, config);
-                WhereIsMyGraveCommand.Register(api, gravestoneService);
-
-                if (config.Features.EnableCorpseAdminCommands)
-                {
-                    GravestoneCommands.Register(api, gravestoneService);
-                }
-            }
-
-            api.Event.PlayerJoin += joinInvulnerabilityService.OnPlayerJoin;
-            api.Event.PlayerNowPlaying += joinInvulnerabilityService.OnPlayerNowPlaying;
-            api.Event.PlayerNowPlaying += joinService.OnPlayerNowPlaying;
-            api.Event.PlayerLeave += joinInvulnerabilityService.OnPlayerLeave;
-            api.Event.PlayerLeave += joinService.OnPlayerLeave;
-
-            if (config.Features.EnableLandClaimNotifications)
-            {
-                landClaimNotificationService = new LandClaimNotificationService(api, config);
-            }
-
-            api.Event.PlayerChat += discord.OnPlayerChat;
-            api.Event.MatchesGridRecipe += OnMatchesGridRecipe;
-
-            if (config.Features.EnableDebugCommand) DebugCommands.Register(api);
-            if (config.Features.EnableDiscordCommand) DiscordCommands.Register(api, config);
-            if (config.Features.EnableSpawnCommands) SpawnCommands.Register(api, config);
-            if (config.Features.EnableHomeCommands) HomeCommands.Register(api, config);
-            if (config.Features.EnableKitCommands) KitCommands.Register(api, config);
-            if (config.Features.EnableTpaCommands) TpaCommands.Register(api, config);
-            if (config.Features.EnableWarpCommands) WarpCommands.Register(api, config);
-            if (config.Features.EnableRtpCommand) RtpCommands.Register(api, config);
-            if (config.Features.EnableUtilityCommands)
-            {
-                WhosOnlineCommand.Register(api, config);
-                WindCommand.Register(api, config);
-                AdminVitalsCommands.Register(api);
+                new GravestoneFeature(api, config, runtime).Register();
             }
         }
 
@@ -106,14 +64,14 @@ namespace FirstStepsTweaks
             );
 
             api.Permissions.RegisterPrivilege(
-                "firststepstweaks.donatorkit",
-                "Allows the player to use the /kit donor command to receive a special donator kit.",
+                "firststepstweaks.supporterkit",
+                "Allows the player to use the /supporterkit command to receive a special donator kit.",
                 true
             );
 
             api.Permissions.RegisterPrivilege(
-                "firststepstweaks.donator",
-                "Allows the player to craft donator-only items like the donator spear special recipe.",
+                "firststepstweaks.supporter",
+                "Allows access to supporter tier features.",
                 true
             );
 
@@ -130,15 +88,15 @@ namespace FirstStepsTweaks
         }
 
 
-        // this handles the donator spear only being craftable by donators
+        // this handles the supporter spear only being craftable by donators
         private bool OnMatchesGridRecipe(IPlayer player, GridRecipe recipe, ItemSlot[] ingredients, int gridWidth)
         {
-            if (recipe?.Output?.Code == null || !recipe.Output.Code.Equals(DonatorSpearCode))
+            if (recipe?.Output?.Code == null || !recipe.Output.Code.Equals(SupporterSpearCode))
             {
                 return true;
             }
 
-            return player?.HasPrivilege("firststepstweaks.donator") == true;
+            return player?.HasPrivilege("firststepstweaks.supporter") == true;
         }
     }
 }

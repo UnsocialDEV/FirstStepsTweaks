@@ -66,7 +66,7 @@ namespace FirstStepsTweaks.Config
     {
         public bool EnableStarterKit { get; set; } = true;
         public bool EnableWinterKit { get; set; } = true;
-        public bool EnableDonatorKit { get; set; } = true;
+        public bool EnableSupporterKit { get; set; } = true;
         public List<KitItemConfig> StarterItems { get; set; } = new List<KitItemConfig>
         {
             new KitItemConfig("game:flint", 6),
@@ -85,11 +85,9 @@ namespace FirstStepsTweaks.Config
             new KitItemConfig("game:redmeat-cooked", 12)
         };
 
-        public List<KitItemConfig> DonatorItems { get; set; } = new List<KitItemConfig>
+        public List<KitItemConfig> SupporterItems { get; set; } = new List<KitItemConfig>
         {
-            new KitItemConfig("game:statictranslocator-broken-north", 1),
-            new KitItemConfig("game:gear-temporal", 1),
-            new KitItemConfig("game:gear-temporal", 1)
+            new KitItemConfig("firststepstweaks:supporter-spear", 1)
         };
     }
 

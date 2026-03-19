@@ -6,12 +6,18 @@ using Vintagestory.API.Server;
 
 namespace FirstStepsTweaks.Commands
 {
-    public static class AdminVitalsCommands
+    public sealed class AdminVitalsCommands
     {
         private const float DefaultMaxHealth = 20f;
         private const float DefaultMaxSaturation = 1500f;
+        private readonly ICoreServerAPI api;
 
-        public static void Register(ICoreServerAPI api)
+        public AdminVitalsCommands(ICoreServerAPI api)
+        {
+            this.api = api;
+        }
+
+        public void Register()
         {
             api.ChatCommands
                 .Create("heal")
@@ -19,7 +25,7 @@ namespace FirstStepsTweaks.Commands
                 .RequiresPlayer()
                 .RequiresPrivilege(Privilege.controlserver)
                 .WithArgs(api.ChatCommands.Parsers.OptionalWord("player"))
-                .HandleWith(args => Heal(api, args));
+                .HandleWith(Heal);
 
             api.ChatCommands
                 .Create("feed")
@@ -27,13 +33,13 @@ namespace FirstStepsTweaks.Commands
                 .RequiresPlayer()
                 .RequiresPrivilege(Privilege.controlserver)
                 .WithArgs(api.ChatCommands.Parsers.OptionalWord("player"))
-                .HandleWith(args => Feed(api, args));
+                .HandleWith(Feed);
         }
 
-        private static TextCommandResult Heal(ICoreServerAPI api, TextCommandCallingArgs args)
+        private TextCommandResult Heal(TextCommandCallingArgs args)
         {
             IServerPlayer caller = (IServerPlayer)args.Caller.Player;
-            IServerPlayer target = ResolveTargetPlayer(api, caller, args[0] as string);
+            IServerPlayer target = ResolveTargetPlayer(caller, args[0] as string);
             if (target == null)
             {
                 return TextCommandResult.Success();
@@ -44,7 +50,6 @@ namespace FirstStepsTweaks.Commands
             {
                 caller.SendMessage(GlobalConstants.InfoLogChatGroup, "Target does not have a health state to modify.", EnumChatType.CommandSuccess);
                 caller.SendMessage(GlobalConstants.GeneralChatGroup, "Target does not have a health state to modify.", EnumChatType.Notification);
-
                 return TextCommandResult.Success();
             }
 
@@ -76,10 +81,10 @@ namespace FirstStepsTweaks.Commands
             return TextCommandResult.Success();
         }
 
-        private static TextCommandResult Feed(ICoreServerAPI api, TextCommandCallingArgs args)
+        private TextCommandResult Feed(TextCommandCallingArgs args)
         {
             IServerPlayer caller = (IServerPlayer)args.Caller.Player;
-            IServerPlayer target = ResolveTargetPlayer(api, caller, args[0] as string);
+            IServerPlayer target = ResolveTargetPlayer(caller, args[0] as string);
             if (target == null)
             {
                 return TextCommandResult.Success();
@@ -90,7 +95,6 @@ namespace FirstStepsTweaks.Commands
             {
                 caller.SendMessage(GlobalConstants.InfoLogChatGroup, "Target does not have a hunger state to modify.", EnumChatType.CommandSuccess);
                 caller.SendMessage(GlobalConstants.GeneralChatGroup, "Target does not have a hunger state to modify.", EnumChatType.Notification);
-
                 return TextCommandResult.Success();
             }
 
@@ -119,7 +123,7 @@ namespace FirstStepsTweaks.Commands
             return TextCommandResult.Success();
         }
 
-        private static IServerPlayer ResolveTargetPlayer(ICoreServerAPI api, IServerPlayer caller, string targetName)
+        private IServerPlayer ResolveTargetPlayer(IServerPlayer caller, string targetName)
         {
             if (string.IsNullOrWhiteSpace(targetName))
             {

@@ -1,4 +1,5 @@
-﻿using FirstStepsTweaks.Config;
+using FirstStepsTweaks.Config;
+using FirstStepsTweaks.Infrastructure.Messaging;
 using FirstStepsTweaks.Services;
 using Vintagestory.API.Common;
 using Vintagestory.API.Config;
@@ -6,17 +7,30 @@ using Vintagestory.API.Server;
 
 namespace FirstStepsTweaks.Commands
 {
-    public static class KitCommands
+    public sealed class KitCommands
     {
-        private const string StarterKey = "fst_starterclaimed";
-        private const string WinterKey = "fst_winterclaimed";
-        private const string DonatorKey = "fst_donatorclaimed";
-        private static KitConfig kitConfig = new KitConfig();
+        private readonly ICoreServerAPI api;
+        private readonly KitConfig kitConfig;
+        private readonly KitClaimStore claimStore;
+        private readonly KitItemConsolidator consolidator;
+        private readonly IPlayerMessenger messenger;
 
-        public static void Register(ICoreServerAPI api, FirstStepsTweaksConfig config)
+        public KitCommands(
+            ICoreServerAPI api,
+            FirstStepsTweaksConfig config,
+            KitClaimStore claimStore,
+            KitItemConsolidator consolidator,
+            IPlayerMessenger messenger)
         {
+            this.api = api;
             kitConfig = config?.Kits ?? new KitConfig();
+            this.claimStore = claimStore;
+            this.consolidator = consolidator;
+            this.messenger = messenger;
+        }
 
+        public void Register()
+        {
             if (kitConfig.EnableStarterKit)
             {
                 api.ChatCommands
@@ -24,7 +38,7 @@ namespace FirstStepsTweaks.Commands
                     .WithDescription("Gives starter items")
                     .RequiresPlayer()
                     .RequiresPrivilege(Privilege.chat)
-                    .HandleWith(args => StarterKit(api, args));
+                    .HandleWith(StarterKit);
             }
 
             if (kitConfig.EnableWinterKit)
@@ -34,99 +48,73 @@ namespace FirstStepsTweaks.Commands
                     .WithDescription("Gives winter starter kit")
                     .RequiresPlayer()
                     .RequiresPrivilege(Privilege.chat)
-                    .HandleWith(args => WinterKit(api, args));
+                    .HandleWith(WinterKit);
             }
 
-            if (kitConfig.EnableDonatorKit)
+            if (kitConfig.EnableSupporterKit)
             {
                 api.ChatCommands
-                    .Create("donatorkit")
-                    .WithDescription("Gives donator thank-you kit")
+                    .Create("supporterkit")
+                    .WithDescription("Gives supporter thank-you kit")
                     .RequiresPlayer()
-                    .RequiresPrivilege("firststepstweaks.donatorkit")
-                    .HandleWith(args => DonatorKit(api, args));
+                    .RequiresPrivilege("firststepstweaks.supporterkit")
+                    .HandleWith(SupporterKit);
             }
         }
 
-        private static TextCommandResult StarterKit(ICoreServerAPI api, TextCommandCallingArgs args)
+        private TextCommandResult StarterKit(TextCommandCallingArgs args)
         {
             IServerPlayer player = (IServerPlayer)args.Caller.Player;
 
-            if (player.GetModdata(StarterKey) != null)
+            if (claimStore.HasStarterClaim(player))
             {
-                player.SendMessage(GlobalConstants.InfoLogChatGroup, "You have already claimed your starter kit.", EnumChatType.CommandSuccess);
-                player.SendMessage(GlobalConstants.GeneralChatGroup, "You have already claimed your starter kit.", EnumChatType.Notification);
+                messenger.SendDual(player, "You have already claimed your starter kit.", (int)EnumChatType.CommandSuccess, (int)EnumChatType.Notification);
                 return TextCommandResult.Success();
             }
 
-            GiveConfiguredItems(api, player, kitConfig.StarterItems);
-            player.SetModdata(StarterKey, new byte[] { 1 });
-            player.SendMessage(GlobalConstants.InfoLogChatGroup, "You have received your starter kit!", EnumChatType.CommandSuccess);
-            player.SendMessage(GlobalConstants.GeneralChatGroup, "You have received your starter kit!", EnumChatType.Notification);
-
+            GiveConfiguredItems(player, kitConfig.StarterItems);
+            claimStore.MarkStarterClaimed(player);
+            messenger.SendDual(player, "You have received your starter kit!", (int)EnumChatType.CommandSuccess, (int)EnumChatType.Notification);
             return TextCommandResult.Success();
         }
 
-        private static TextCommandResult WinterKit(ICoreServerAPI api, TextCommandCallingArgs args)
+        private TextCommandResult WinterKit(TextCommandCallingArgs args)
         {
             IServerPlayer player = (IServerPlayer)args.Caller.Player;
 
-            if (player.GetModdata(WinterKey) != null)
+            if (claimStore.HasWinterClaim(player))
             {
-                player.SendMessage(GlobalConstants.InfoLogChatGroup, "You have already claimed your winter kit.", EnumChatType.CommandError);
-                player.SendMessage(GlobalConstants.GeneralChatGroup, "You have already claimed your winter kit.", EnumChatType.Notification);
-
+                messenger.SendDual(player, "You have already claimed your winter kit.", (int)EnumChatType.CommandError, (int)EnumChatType.Notification);
                 return TextCommandResult.Success();
             }
 
-            GiveConfiguredItems(api, player, kitConfig.WinterItems);
-            player.SetModdata(WinterKey, new byte[] { 1 });
-            player.SendMessage(GlobalConstants.InfoLogChatGroup, "You have received your winter kit!", EnumChatType.CommandSuccess);
-            player.SendMessage(GlobalConstants.GeneralChatGroup, "You have received your winter kit!", EnumChatType.Notification);
-
+            GiveConfiguredItems(player, kitConfig.WinterItems);
+            claimStore.MarkWinterClaimed(player);
+            messenger.SendDual(player, "You have received your winter kit!", (int)EnumChatType.CommandSuccess, (int)EnumChatType.Notification);
             return TextCommandResult.Success();
         }
 
-        private static TextCommandResult DonatorKit(ICoreServerAPI api, TextCommandCallingArgs args)
+        private TextCommandResult SupporterKit(TextCommandCallingArgs args)
         {
             IServerPlayer player = (IServerPlayer)args.Caller.Player;
 
-            if (player.GetModdata(DonatorKey) != null)
+            if (claimStore.HasSupporterClaim(player))
             {
-                player.SendMessage(GlobalConstants.InfoLogChatGroup, "You have already claimed your donator kit.", EnumChatType.CommandError);
-                player.SendMessage(GlobalConstants.GeneralChatGroup, "You have already claimed your donator kit.", EnumChatType.Notification);
-
+                messenger.SendDual(player, "You have already claimed your Supporter kit.", (int)EnumChatType.CommandError, (int)EnumChatType.Notification);
                 return TextCommandResult.Success();
             }
 
-            GiveConfiguredItems(api, player, kitConfig.DonatorItems);
-            player.SetModdata(DonatorKey, new byte[] { 1 });
-            player.SendMessage(GlobalConstants.InfoLogChatGroup, "You have received your donator kit!", EnumChatType.CommandSuccess);
-            player.SendMessage(GlobalConstants.GeneralChatGroup, "You have received your donator kit!", EnumChatType.Notification);
-
+            GiveConfiguredItems(player, kitConfig.SupporterItems);
+            claimStore.MarkSupporterClaimed(player);
+            messenger.SendDual(player, "You have received your Supporter kit!", (int)EnumChatType.CommandSuccess, (int)EnumChatType.Notification);
             return TextCommandResult.Success();
         }
 
-        private static void GiveConfiguredItems(ICoreServerAPI api, IServerPlayer player, System.Collections.Generic.List<KitItemConfig> items)
+        private void GiveConfiguredItems(IServerPlayer player, System.Collections.Generic.List<KitItemConfig> items)
         {
-            if (items == null) return;
-
-            // Consolidate items by Code. If duplicates exist, keep the first occurrence's quantity and skip subsequent duplicates.
-            var consolidated = new System.Collections.Generic.Dictionary<string, int>(System.StringComparer.OrdinalIgnoreCase);
-            foreach (var item in items)
+            foreach (var item in consolidator.Consolidate(items))
             {
-                if (item == null || string.IsNullOrWhiteSpace(item.Code) || item.Quantity <= 0) continue;
-                if (consolidated.ContainsKey(item.Code))
-                {
-                    continue;
-                }
-
-                consolidated[item.Code] = item.Quantity;
-            }
-
-            foreach (var kvp in consolidated)
-            {
-                ItemService.GiveCollectible(api, player, kvp.Key, kvp.Value);
+                ItemService.GiveCollectible(api, player, item.Key, item.Value);
             }
         }
     }

@@ -1,13 +1,12 @@
 ﻿using System;
+using System.Reflection;
 using System.Linq;
-using System.Net.Http;
-using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Reflection;
+using FirstStepsTweaks.Discord.Messaging;
+using FirstStepsTweaks.Discord.Transport;
 using Vintagestory.API.Common;
 using Vintagestory.API.Config;
 using Vintagestory.API.Datastructures;
@@ -18,14 +17,12 @@ namespace FirstStepsTweaks.Discord
     public class DiscordBridge
     {
         private readonly ICoreServerAPI api;
+        private readonly DiscordConfigStore configStore;
+        private readonly DiscordLastMessageStore lastMessageStore;
+        private readonly IDiscordMessageTranslator messageTranslator;
+        private readonly IDiscordWebhookClient webhookClient;
         private DiscordBridgeConfig config;
-
-        private static readonly HttpClient http = new HttpClient();
         private readonly SemaphoreSlim pollLock = new SemaphoreSlim(1, 1);
-
-        private const string DiscordConfigFileName = "firststepstweaks.discord.json";
-        private const string LegacyDiscordConfigFileName = "FirstStepsTweaks.Discord.json";
-        private const string DiscordLastIdKey = "fst_discord_lastmsgid";
         private string lastMessageId;
 
         private readonly SemaphoreSlim worldUpdateLock = new SemaphoreSlim(1, 1);
@@ -36,6 +33,10 @@ namespace FirstStepsTweaks.Discord
         public DiscordBridge(ICoreServerAPI api)
         {
             this.api = api;
+            configStore = new DiscordConfigStore(api);
+            lastMessageStore = new DiscordLastMessageStore(api);
+            messageTranslator = new DiscordMessageTranslator();
+            webhookClient = new DiscordWebhookClient();
 
             LoadConfig();
             if (IsConfigured() && config.RelayGameToDiscord)
@@ -64,28 +65,12 @@ namespace FirstStepsTweaks.Discord
 
         private void LoadConfig()
         {
-            config = api.LoadModConfig<DiscordBridgeConfig>(DiscordConfigFileName);
-            if (config != null)
-            {
-                return;
-            }
-
-            config = api.LoadModConfig<DiscordBridgeConfig>(LegacyDiscordConfigFileName);
-            if (config != null)
-            {
-                api.StoreModConfig(config, DiscordConfigFileName);
-                api.Logger.Notification($"[FirstStepsTweaks] Migrated Discord config file '{LegacyDiscordConfigFileName}' to '{DiscordConfigFileName}' for cross-platform compatibility.");
-                return;
-            }
-
-            config = new DiscordBridgeConfig();
-            api.StoreModConfig(config, DiscordConfigFileName);
-            api.Logger.Warning($"[FirstStepsTweaks] Created Discord config file {DiscordConfigFileName}. Fill it in and restart.");
+            config = configStore.Load();
         }
 
         private void RestoreLastMessageId()
         {
-            string saved = api.WorldManager.SaveGame.GetData<string>(DiscordLastIdKey);
+            string saved = lastMessageStore.Load();
             if (!string.IsNullOrWhiteSpace(saved))
                 lastMessageId = saved;
         }
@@ -132,15 +117,14 @@ namespace FirstStepsTweaks.Discord
 
         private string StripVsFormatting(string input)
         {
-            if (string.IsNullOrEmpty(input)) return input;
-            return Regex.Replace(input, "<.*?>", string.Empty);
+            return messageTranslator.StripVsFormatting(input);
         }
 
         private async Task SendPlainToDiscord(string username, string message)
         {
             if (!IsConfigured()) return;
 
-            string mappedMessage = ReplaceGameMentionsWithDiscordMentions(message);
+            string mappedMessage = messageTranslator.ReplaceGameMentionsWithDiscordMentions(message, config.GameMentionMap);
 
             var payload = new
             {
@@ -154,37 +138,13 @@ namespace FirstStepsTweaks.Discord
 
             string json = JsonSerializer.Serialize(payload);
 
-            using var httpContent = new StringContent(json, Encoding.UTF8, "application/json");
-            await http.PostAsync(config.WebhookUrl, httpContent);
+            await webhookClient.PostJsonAsync(config.WebhookUrl, json);
         }
 
 
         private string ReplaceGameMentionsWithDiscordMentions(string message)
         {
-            if (string.IsNullOrWhiteSpace(message)) return message;
-            if (config?.GameMentionMap == null || config.GameMentionMap.Count == 0) return message;
-
-            return Regex.Replace(
-                message,
-                @"(?<!\w)@([A-Za-z0-9_.-]+)",
-                match =>
-                {
-                    string key = match.Groups[1].Value;
-
-                    if (!config.GameMentionMap.TryGetValue(key, out string discordId) &&
-                        !config.GameMentionMap.TryGetValue(key.ToLowerInvariant(), out discordId))
-                    {
-                        return match.Value;
-                    }
-
-                    if (string.IsNullOrWhiteSpace(discordId))
-                    {
-                        return match.Value;
-                    }
-
-                    return $"<@{discordId.Trim()}>";
-                }
-            );
+            return messageTranslator.ReplaceGameMentionsWithDiscordMentions(message, config?.GameMentionMap);
         }
 
         private async Task SendEmbedToDiscord(string username, string description, int color)
@@ -206,8 +166,7 @@ namespace FirstStepsTweaks.Discord
 
             string json = JsonSerializer.Serialize(payload);
 
-            using var httpContent = new StringContent(json, Encoding.UTF8, "application/json");
-            await http.PostAsync(config.WebhookUrl, httpContent);
+            await webhookClient.PostJsonAsync(config.WebhookUrl, json);
         }
 
         private void OnPlayerJoin(IServerPlayer player)
@@ -522,20 +481,19 @@ namespace FirstStepsTweaks.Discord
                     ? $"https://discord.com/api/v10/channels/{config.ChannelId}/messages?limit=100"
                     : $"https://discord.com/api/v10/channels/{config.ChannelId}/messages?after={lastMessageId}&limit=100";
 
-                using var req = new HttpRequestMessage(HttpMethod.Get, url);
-                req.Headers.Authorization = new AuthenticationHeaderValue("Bot", config.BotToken);
-
-                using var resp = await http.SendAsync(req);
-
-                if ((int)resp.StatusCode == 429)
+                DiscordHttpResponse response = await webhookClient.GetAsync(url, config.BotToken);
+                if (response.StatusCode == 429)
                 {
                     api.Logger.Warning("[FirstStepsTweaks] Discord rate limited.");
                     return;
                 }
 
-                resp.EnsureSuccessStatusCode();
+                if (response.StatusCode < 200 || response.StatusCode >= 300)
+                {
+                    throw new InvalidOperationException($"Discord returned status code {response.StatusCode}.");
+                }
 
-                string json = await resp.Content.ReadAsStringAsync();
+                string json = response.Body;
                 if (string.IsNullOrWhiteSpace(json)) return;
 
                 using JsonDocument doc = JsonDocument.Parse(json);
@@ -605,7 +563,7 @@ namespace FirstStepsTweaks.Discord
                 }
 
                 // Save last processed message ID once
-                api.WorldManager.SaveGame.StoreData(DiscordLastIdKey, lastMessageId);
+                lastMessageStore.Save(lastMessageId);
             }
             catch (Exception e)
             {
@@ -615,44 +573,26 @@ namespace FirstStepsTweaks.Discord
 
         private string SanitizeDiscordContentForGame(JsonElement msg, string content)
         {
-            if (string.IsNullOrWhiteSpace(content)) return content;
-
-            // Convert user mentions like <@123...> into @Username so they don't leak VS rich text markers.
-            if (msg.TryGetProperty("mentions", out var mentions) && mentions.ValueKind == JsonValueKind.Array)
+            if (string.IsNullOrWhiteSpace(content))
             {
-                foreach (var mention in mentions.EnumerateArray())
+                return content;
+            }
+
+            var mentions = new System.Collections.Generic.List<DiscordMention>();
+            if (msg.TryGetProperty("mentions", out JsonElement mentionElements) && mentionElements.ValueKind == JsonValueKind.Array)
+            {
+                foreach (JsonElement mention in mentionElements.EnumerateArray())
                 {
-                    if (!mention.TryGetProperty("id", out var idProp))
-                        continue;
-
-                    string mentionId = idProp.GetString();
-                    if (string.IsNullOrWhiteSpace(mentionId))
-                        continue;
-
-                    string mentionName = null;
-
-                    if (mention.TryGetProperty("global_name", out var globalNameProp))
+                    mentions.Add(new DiscordMention
                     {
-                        mentionName = globalNameProp.GetString();
-                    }
-
-                    if (string.IsNullOrWhiteSpace(mentionName) && mention.TryGetProperty("username", out var usernameProp))
-                    {
-                        mentionName = usernameProp.GetString();
-                    }
-
-                    mentionName ??= "user";
-
-                    content = content.Replace($"<@{mentionId}>", $"@{mentionName}");
-                    content = content.Replace($"<@!{mentionId}>", $"@{mentionName}");
+                        Id = mention.TryGetProperty("id", out JsonElement idProp) ? idProp.GetString() ?? string.Empty : string.Empty,
+                        GlobalName = mention.TryGetProperty("global_name", out JsonElement globalNameProp) ? globalNameProp.GetString() ?? string.Empty : string.Empty,
+                        Username = mention.TryGetProperty("username", out JsonElement usernameProp) ? usernameProp.GetString() ?? string.Empty : string.Empty
+                    });
                 }
             }
 
-            // Remove any remaining Discord tag syntax (<#...>, <@&...>, custom emojis, etc.)
-            // so Vintage Story does not interpret angle-bracket content as formatting tags.
-            content = Regex.Replace(content, "<[^>]+>", string.Empty);
-
-            return content;
+            return messageTranslator.SanitizeDiscordContentForGame(content, mentions);
         }
     }
 }

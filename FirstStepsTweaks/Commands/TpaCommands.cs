@@ -1,425 +1,264 @@
 using System;
-using System.Collections.Generic;
 using FirstStepsTweaks.Config;
+using FirstStepsTweaks.Infrastructure.Messaging;
+using FirstStepsTweaks.Infrastructure.Players;
+using FirstStepsTweaks.Infrastructure.Teleport;
 using FirstStepsTweaks.Services;
+using FirstStepsTweaks.Teleport;
 using Vintagestory.API.Common;
 using Vintagestory.API.Config;
 using Vintagestory.API.Server;
 
 namespace FirstStepsTweaks.Commands
 {
-    public static class TpaCommands
+    public sealed class TpaCommands
     {
-        private class TpaRequest
+        private readonly ICoreServerAPI api;
+        private readonly TeleportConfig teleportConfig;
+        private readonly IPlayerMessenger messenger;
+        private readonly IPlayerLookup playerLookup;
+        private readonly ITeleportWarmupService teleportWarmupService;
+        private readonly IBackLocationStore backLocationStore;
+        private readonly TpaPreferenceStore preferenceStore;
+        private readonly TpaRequestStore requestStore;
+
+        public TpaCommands(
+            ICoreServerAPI api,
+            FirstStepsTweaksConfig config,
+            IPlayerMessenger messenger,
+            IPlayerLookup playerLookup,
+            ITeleportWarmupService teleportWarmupService,
+            IBackLocationStore backLocationStore,
+            TpaPreferenceStore preferenceStore,
+            TpaRequestStore requestStore)
         {
-            public string RequesterUid;
-            public string TargetUid;
-            public long ExpireListenerId;
+            this.api = api;
+            teleportConfig = config?.Teleport ?? new TeleportConfig();
+            this.messenger = messenger;
+            this.playerLookup = playerLookup;
+            this.teleportWarmupService = teleportWarmupService;
+            this.backLocationStore = backLocationStore;
+            this.preferenceStore = preferenceStore;
+            this.requestStore = requestStore;
         }
 
-        // targetUID -> list of requests
-        private static Dictionary<string, List<TpaRequest>> pendingRequests =
-            new Dictionary<string, List<TpaRequest>>();
-
-        private const string TpaDisabledKey = "fst_tpa_disabled";
-        private static TeleportConfig teleportConfig = new TeleportConfig();
-
-        public static void Register(ICoreServerAPI api, FirstStepsTweaksConfig config)
+        public void Register()
         {
-            teleportConfig = config?.Teleport ?? new TeleportConfig();
-
             api.ChatCommands.Create("tpa")
                 .WithArgs(api.ChatCommands.Parsers.Word("player"))
                 .RequiresPlayer()
                 .RequiresPrivilege(Privilege.chat)
-                .HandleWith(args => Tpa(api, args));
+                .HandleWith(Tpa);
 
             api.ChatCommands.Create("tpaccept")
                 .RequiresPlayer()
                 .RequiresPrivilege(Privilege.chat)
-                .HandleWith(args => TpAccept(api, args));
+                .HandleWith(TpAccept);
 
             api.ChatCommands.Create("tpadeny")
                 .RequiresPlayer()
                 .RequiresPrivilege(Privilege.chat)
-                .HandleWith(args => TpDeny(api, args));
+                .HandleWith(TpDeny);
 
             api.ChatCommands.Create("tpacancel")
                 .RequiresPlayer()
                 .RequiresPrivilege(Privilege.chat)
-                .HandleWith(args => TpCancel(api, args));
+                .HandleWith(TpCancel);
 
             api.ChatCommands.Create("tpatoggle")
                 .RequiresPlayer()
                 .RequiresPrivilege(Privilege.chat)
-                .HandleWith(args => TpaToggle(api, args));
+                .HandleWith(TpaToggle);
         }
 
-        private static bool IsTpaDisabled(ICoreServerAPI api, string uid)
+        private bool IsTpaDisabled(string uid)
         {
-            var player = GetPlayer(api, uid);
-            if (player == null) return false;
-
-            return player.GetModData<bool>(TpaDisabledKey);
+            return preferenceStore.IsDisabled(playerLookup.FindOnlinePlayerByUid(uid));
         }
 
-        private static void SetTpaDisabled(ICoreServerAPI api, string uid, bool value)
+        private void SetTpaDisabled(string uid, bool value)
         {
-            var player = GetPlayer(api, uid);
-            if (player == null) return;
-
-            player.SetModData(TpaDisabledKey, value);
+            preferenceStore.SetDisabled(playerLookup.FindOnlinePlayerByUid(uid), value);
         }
 
-        private static IServerPlayer GetPlayer(ICoreServerAPI api, string uid)
-        {
-            foreach (IServerPlayer plr in api.World.AllOnlinePlayers)
-            {
-                if (plr.PlayerUID == uid) return plr;
-            }
-            return null;
-        }
-
-        private static IServerPlayer GetPlayerByName(ICoreServerAPI api, string name)
-        {
-            foreach (IServerPlayer plr in api.World.AllOnlinePlayers)
-            {
-                if (plr.PlayerName.Equals(name, StringComparison.OrdinalIgnoreCase))
-                    return plr;
-            }
-            return null;
-        }
-
-        private static TextCommandResult Tpa(ICoreServerAPI api, TextCommandCallingArgs args)
+        private TextCommandResult Tpa(TextCommandCallingArgs args)
         {
             var caller = (IServerPlayer)args.Caller.Player;
             string targetName = (string)args[0];
 
-            var target = GetPlayerByName(api, targetName);
+            var target = playerLookup.FindOnlinePlayerByName(targetName);
 
             if (target == null)
             {
-                caller.SendMessage(GlobalConstants.InfoLogChatGroup, "Player not found.", EnumChatType.CommandSuccess);
-                caller.SendMessage(GlobalConstants.GeneralChatGroup, "Player not found.", EnumChatType.Notification);
-
+                messenger.SendDual(caller, "Player not found.", (int)EnumChatType.CommandSuccess, (int)EnumChatType.Notification);
                 return TextCommandResult.Success();
             }
 
             if (target.PlayerUID == caller.PlayerUID)
             {
-                caller.SendMessage(GlobalConstants.InfoLogChatGroup, "You cannot teleport to yourself.", EnumChatType.CommandSuccess);
-                caller.SendMessage(GlobalConstants.GeneralChatGroup, "You cannot teleport to yourself.", EnumChatType.Notification);
-
+                messenger.SendDual(caller, "You cannot teleport to yourself.", (int)EnumChatType.CommandSuccess, (int)EnumChatType.Notification);
                 return TextCommandResult.Success();
             }
 
-            if (IsTpaDisabled(api, target.PlayerUID))
+            if (IsTpaDisabled(target.PlayerUID))
             {
-                caller.SendMessage(GlobalConstants.InfoLogChatGroup,
-                    $"{target.PlayerName} is not accepting teleport requests.",
-                    EnumChatType.CommandSuccess
-                    );
-
-                caller.SendMessage(GlobalConstants.GeneralChatGroup,
-                    $"{target.PlayerName} is not accepting teleport requests.",
-                    EnumChatType.Notification
-                    );
+                messenger.SendInfo(caller, $"{target.PlayerName} is not accepting teleport requests.", GlobalConstants.InfoLogChatGroup, (int)EnumChatType.CommandSuccess);
+                messenger.SendGeneral(caller, $"{target.PlayerName} is not accepting teleport requests.", GlobalConstants.GeneralChatGroup, (int)EnumChatType.Notification);
                 return TextCommandResult.Success();
             }
 
-            if (!pendingRequests.ContainsKey(target.PlayerUID))
-                pendingRequests[target.PlayerUID] = new List<TpaRequest>();
-
-            var request = new TpaRequest
+            var request = new TpaRequestRecord
             {
                 RequesterUid = caller.PlayerUID,
                 TargetUid = target.PlayerUID
             };
 
-            pendingRequests[target.PlayerUID].Add(request);
+            requestStore.Add(request);
 
             request.ExpireListenerId = api.Event.RegisterCallback(dt =>
             {
-                if (pendingRequests.TryGetValue(target.PlayerUID, out var list))
-                {
-                    list.Remove(request);
-                }
+                requestStore.Remove(target.PlayerUID, request);
 
-                var requester = GetPlayer(api, request.RequesterUid);
-                requester?.SendMessage(GlobalConstants.InfoLogChatGroup,
-                    "Your teleport request expired.",
-                    EnumChatType.CommandSuccess);
-
-                requester?.SendMessage(GlobalConstants.GeneralChatGroup,
-                    "Your teleport request expired.",
-                    EnumChatType.Notification);
+                var requester = playerLookup.FindOnlinePlayerByUid(request.RequesterUid);
+                messenger.SendInfo(requester, "Your teleport request expired.", GlobalConstants.InfoLogChatGroup, (int)EnumChatType.CommandSuccess);
+                messenger.SendGeneral(requester, "Your teleport request expired.", GlobalConstants.GeneralChatGroup, (int)EnumChatType.Notification);
 
             }, teleportConfig.TpaExpireMs);
 
-            caller.SendMessage(GlobalConstants.InfoLogChatGroup,
-                $"Teleport request sent to {target.PlayerName}.",
-                EnumChatType.CommandSuccess);
+            messenger.SendInfo(caller, $"Teleport request sent to {target.PlayerName}.", GlobalConstants.InfoLogChatGroup, (int)EnumChatType.CommandSuccess);
+            messenger.SendGeneral(caller, $"Teleport request sent to {target.PlayerName}.", GlobalConstants.GeneralChatGroup, (int)EnumChatType.Notification);
 
-            caller.SendMessage(GlobalConstants.GeneralChatGroup,
-                $"Teleport request sent to {target.PlayerName}.",
-                EnumChatType.Notification);
+            messenger.SendInfo(target, $"{caller.PlayerName} wants to teleport to you. Use /tpaccept to accept.", GlobalConstants.InfoLogChatGroup, (int)EnumChatType.CommandSuccess);
+            messenger.SendGeneral(target, $"{caller.PlayerName} wants to teleport to you. Use /tpaccept to accept.", GlobalConstants.GeneralChatGroup, (int)EnumChatType.Notification);
 
-            target.SendMessage(GlobalConstants.InfoLogChatGroup,
-                $"{caller.PlayerName} wants to teleport to you. Use /tpaccept to accept.",
-                EnumChatType.CommandSuccess);
-
-            target.SendMessage(GlobalConstants.GeneralChatGroup,
-                $"{caller.PlayerName} wants to teleport to you. Use /tpaccept to accept.",
-                EnumChatType.Notification);
-
-            target.SendMessage(GlobalConstants.InfoLogChatGroup,
-                $"You recieved a teleport request from {caller.PlayerName}.",
-                EnumChatType.CommandSuccess);
-
-            target.SendMessage(GlobalConstants.GeneralChatGroup,
-                $"You recieved a teleport request from {caller.PlayerName}.",
-                EnumChatType.Notification);
+            messenger.SendInfo(target, $"You recieved a teleport request from {caller.PlayerName}.", GlobalConstants.InfoLogChatGroup, (int)EnumChatType.CommandSuccess);
+            messenger.SendGeneral(target, $"You recieved a teleport request from {caller.PlayerName}.", GlobalConstants.GeneralChatGroup, (int)EnumChatType.Notification);
 
             return TextCommandResult.Success();
         }
 
-        private static TextCommandResult TpAccept(ICoreServerAPI api, TextCommandCallingArgs args)
+        private TextCommandResult TpAccept(TextCommandCallingArgs args)
         {
             var target = (IServerPlayer)args.Caller.Player;
 
-            if (!pendingRequests.TryGetValue(target.PlayerUID, out var list) || list.Count == 0)
+            if (!requestStore.TryTakeFirst(target.PlayerUID, out TpaRequestRecord request))
             {
-                target.SendMessage(GlobalConstants.InfoLogChatGroup,
-                    "No pending teleport requests.",
-                    EnumChatType.CommandSuccess);
-
-                target.SendMessage(GlobalConstants.GeneralChatGroup,
-                    "No pending teleport requests.",
-                    EnumChatType.Notification);
+                messenger.SendInfo(target, "No pending teleport requests.", GlobalConstants.InfoLogChatGroup, (int)EnumChatType.CommandSuccess);
+                messenger.SendGeneral(target, "No pending teleport requests.", GlobalConstants.GeneralChatGroup, (int)EnumChatType.Notification);
                 return TextCommandResult.Success();
             }
-
-            var request = list[0];
-            list.RemoveAt(0);
 
             api.Event.UnregisterCallback(request.ExpireListenerId);
 
-            var requester = GetPlayer(api, request.RequesterUid);
+            var requester = playerLookup.FindOnlinePlayerByUid(request.RequesterUid);
             if (requester == null)
             {
-                target.SendMessage(GlobalConstants.InfoLogChatGroup,
-                    "Requester is no longer online.",
-                    EnumChatType.CommandSuccess);
-
-                target.SendMessage(GlobalConstants.GeneralChatGroup,
-                    "Requester is no longer online.",
-                    EnumChatType.Notification);
+                messenger.SendInfo(target, "Requester is no longer online.", GlobalConstants.InfoLogChatGroup, (int)EnumChatType.CommandSuccess);
+                messenger.SendGeneral(target, "Requester is no longer online.", GlobalConstants.GeneralChatGroup, (int)EnumChatType.Notification);
                 return TextCommandResult.Success();
             }
 
-            StartTeleportWarmup(api, requester, target);
+            StartTeleportWarmup(requester, target);
 
             return TextCommandResult.Success();
         }
 
-        private static void StartTeleportWarmup(ICoreServerAPI api, IServerPlayer requester, IServerPlayer target)
+        private void StartTeleportWarmup(IServerPlayer requester, IServerPlayer target)
         {
-            if (teleportConfig.WarmupSeconds > 0 && TeleportBypass.HasBypass(requester))
+            teleportWarmupService.Begin(new TeleportWarmupRequest
             {
-                TeleportBypass.NotifyBypassingCooldown(requester, "/tpa warmup");
-                BackCommands.RecordCurrentLocation(requester);
-                requester.Entity.TeleportToDouble(
-                    target.Entity.Pos.X,
-                    target.Entity.Pos.Y,
-                    target.Entity.Pos.Z
-                );
-
-                requester.SendIngameError("no_permission", "Teleported.");
-                return;
-            }
-
-            double startX = requester.Entity.Pos.X;
-            double startY = requester.Entity.Pos.Y;
-            double startZ = requester.Entity.Pos.Z;
-
-            int seconds = teleportConfig.WarmupSeconds;
-            long listenerId = 0;
-
-            requester.SendMessage(GlobalConstants.InfoLogChatGroup,
-                $"Teleporting in {teleportConfig.WarmupSeconds} seconds. Do not move.",
-                EnumChatType.CommandSuccess);
-
-            requester.SendMessage(GlobalConstants.GeneralChatGroup,
-                $"Teleporting in {teleportConfig.WarmupSeconds} seconds. Do not move.",
-                EnumChatType.Notification);
-
-            listenerId = api.Event.RegisterGameTickListener(dt =>
-            {
-                if (requester?.Entity == null)
+                Player = requester,
+                WarmupMessage = $"Teleporting in {teleportConfig.WarmupSeconds} seconds. Do not move.",
+                CountdownTemplate = "Teleporting in {0}...",
+                CancelMessage = "Teleport cancelled because you moved.",
+                SuccessIngameMessage = "Teleported.",
+                BypassContext = "/tpa warmup",
+                WarmupSeconds = teleportConfig.WarmupSeconds,
+                TickIntervalMs = teleportConfig.TickIntervalMs,
+                CancelMoveThreshold = teleportConfig.CancelMoveThreshold,
+                WarmupInfoChatType = (int)EnumChatType.CommandSuccess,
+                WarmupGeneralGroupId = GlobalConstants.GeneralChatGroup,
+                WarmupGeneralChatType = (int)EnumChatType.Notification,
+                CancelInfoChatType = (int)EnumChatType.CommandSuccess,
+                CancelGeneralChatType = (int)EnumChatType.Notification,
+                ExecuteTeleport = () =>
                 {
-                    api.Event.UnregisterGameTickListener(listenerId);
-                    return;
-                }
-
-                double dx = Math.Abs(requester.Entity.Pos.X - startX);
-                double dy = Math.Abs(requester.Entity.Pos.Y - startY);
-                double dz = Math.Abs(requester.Entity.Pos.Z - startZ);
-
-                if (dx > teleportConfig.CancelMoveThreshold || dy > teleportConfig.CancelMoveThreshold || dz > teleportConfig.CancelMoveThreshold)
-                {
-                    requester.SendMessage(GlobalConstants.InfoLogChatGroup,
-                        "Teleport cancelled because you moved.",
-                        EnumChatType.CommandSuccess);
-
-                    requester.SendMessage(GlobalConstants.GeneralChatGroup,
-                        "Teleport cancelled because you moved.",
-                        EnumChatType.Notification);
-
-                    api.Event.UnregisterGameTickListener(listenerId);
-                    return;
-                }
-
-                if (seconds > 0)
-                {
-                    requester.SendIngameError("no_permission", $"Teleporting in {seconds}...");
-                    seconds--;
-                }
-                else
-                {
-                    BackCommands.RecordCurrentLocation(requester);
+                    backLocationStore.RecordCurrentLocation(requester);
                     requester.Entity.TeleportToDouble(
                         target.Entity.Pos.X,
                         target.Entity.Pos.Y,
                         target.Entity.Pos.Z
                     );
-
-                    requester.SendIngameError("no_permission", "Teleported.");
-
-                    api.Event.UnregisterGameTickListener(listenerId);
                 }
-
-            }, teleportConfig.TickIntervalMs);
+            });
         }
 
-        private static TextCommandResult TpDeny(ICoreServerAPI api, TextCommandCallingArgs args)
+        private TextCommandResult TpDeny(TextCommandCallingArgs args)
         {
             var target = (IServerPlayer)args.Caller.Player;
 
-            if (!pendingRequests.TryGetValue(target.PlayerUID, out var list) || list.Count == 0)
+            if (!requestStore.TryTakeFirst(target.PlayerUID, out TpaRequestRecord request))
             {
-                target.SendMessage(GlobalConstants.InfoLogChatGroup,
-                    "No pending teleport requests.",
-                    EnumChatType.CommandSuccess);
-
-                target.SendMessage(GlobalConstants.GeneralChatGroup,
-                    "No pending teleport requests.",
-                    EnumChatType.Notification);
+                messenger.SendInfo(target, "No pending teleport requests.", GlobalConstants.InfoLogChatGroup, (int)EnumChatType.CommandSuccess);
+                messenger.SendGeneral(target, "No pending teleport requests.", GlobalConstants.GeneralChatGroup, (int)EnumChatType.Notification);
                 return TextCommandResult.Success();
             }
 
-            var request = list[0];
-            list.RemoveAt(0);
-
             api.Event.UnregisterCallback(request.ExpireListenerId);
 
-            var requester = GetPlayer(api, request.RequesterUid);
-            requester?.SendMessage(GlobalConstants.InfoLogChatGroup,
-                "Your teleport request was denied.",
-                EnumChatType.CommandSuccess);
-
-            requester?.SendMessage(GlobalConstants.GeneralChatGroup,
-                "Your teleport request was denied.",
-                EnumChatType.Notification);
+            var requester = playerLookup.FindOnlinePlayerByUid(request.RequesterUid);
+            messenger.SendInfo(requester, "Your teleport request was denied.", GlobalConstants.InfoLogChatGroup, (int)EnumChatType.CommandSuccess);
+            messenger.SendGeneral(requester, "Your teleport request was denied.", GlobalConstants.GeneralChatGroup, (int)EnumChatType.Notification);
 
             return TextCommandResult.Success();
         }
 
-        private static TextCommandResult TpCancel(ICoreServerAPI api, TextCommandCallingArgs args)
+        private TextCommandResult TpCancel(TextCommandCallingArgs args)
         {
             var caller = (IServerPlayer)args.Caller.Player;
 
-            foreach (var kvp in pendingRequests)
+            if (requestStore.TryCancelByRequester(caller.PlayerUID, out TpaRequestRecord request))
             {
-                var list = kvp.Value;
-                for (int i = 0; i < list.Count; i++)
-                {
-                    if (list[i].RequesterUid == caller.PlayerUID)
-                    {
-                        api.Event.UnregisterCallback(list[i].ExpireListenerId);
-                        list.RemoveAt(i);
-
-                        caller.SendMessage(GlobalConstants.InfoLogChatGroup,
-                            "Teleport request cancelled.",
-                            EnumChatType.CommandSuccess);
-
-                        caller.SendMessage(GlobalConstants.GeneralChatGroup,
-                            "Teleport request cancelled.",
-                            EnumChatType.Notification);
-
-                        return TextCommandResult.Success();
-                    }
-                }
+                api.Event.UnregisterCallback(request.ExpireListenerId);
+                messenger.SendInfo(caller, "Teleport request cancelled.", GlobalConstants.InfoLogChatGroup, (int)EnumChatType.CommandSuccess);
+                messenger.SendGeneral(caller, "Teleport request cancelled.", GlobalConstants.GeneralChatGroup, (int)EnumChatType.Notification);
+                return TextCommandResult.Success();
             }
 
-            caller.SendMessage(GlobalConstants.InfoLogChatGroup,
-                "You have no pending requests.",
-                EnumChatType.Notification);
-
-            caller.SendMessage(GlobalConstants.GeneralChatGroup,
-                "You have no pending requests.",
-                EnumChatType.Notification);
+            messenger.SendInfo(caller, "You have no pending requests.", GlobalConstants.InfoLogChatGroup, (int)EnumChatType.Notification);
+            messenger.SendGeneral(caller, "You have no pending requests.", GlobalConstants.GeneralChatGroup, (int)EnumChatType.Notification);
 
             return TextCommandResult.Success();
         }
 
-        private static TextCommandResult TpaToggle(ICoreServerAPI api, TextCommandCallingArgs args)
+        private TextCommandResult TpaToggle(TextCommandCallingArgs args)
         {
             var player = (IServerPlayer)args.Caller.Player;
             string uid = player.PlayerUID;
 
-            bool currentlyDisabled = IsTpaDisabled(api, uid);
+            bool currentlyDisabled = IsTpaDisabled(uid);
             bool newState = !currentlyDisabled;
 
-            SetTpaDisabled(api, uid, newState);
+            SetTpaDisabled(uid, newState);
 
             if (newState)
             {
-                if (pendingRequests.TryGetValue(uid, out var list))
+                var requests = requestStore.Clear(uid);
+                foreach (TpaRequestRecord request in requests)
                 {
-                    foreach (var request in list)
-                    {
-                        api.Event.UnregisterCallback(request.ExpireListenerId);
-
-                        var requester = GetPlayer(api, request.RequesterUid);
-                        requester?.SendMessage(GlobalConstants.InfoLogChatGroup,
-                            "Your teleport request was automatically denied.",
-                            EnumChatType.CommandSuccess);
-
-                        requester?.SendMessage(GlobalConstants.GeneralChatGroup,
-                            "Your teleport request was automatically denied.",
-                            EnumChatType.Notification);
-                    }
-
-                    list.Clear();
+                    api.Event.UnregisterCallback(request.ExpireListenerId);
+                    var requester = playerLookup.FindOnlinePlayerByUid(request.RequesterUid);
+                    messenger.SendInfo(requester, "Your teleport request was automatically denied.", GlobalConstants.InfoLogChatGroup, (int)EnumChatType.CommandSuccess);
+                    messenger.SendGeneral(requester, "Your teleport request was automatically denied.", GlobalConstants.GeneralChatGroup, (int)EnumChatType.Notification);
                 }
 
-                player.SendMessage(GlobalConstants.InfoLogChatGroup,
-                    "TPA requests disabled.",
-                    EnumChatType.CommandSuccess);
-
-                player.SendMessage(GlobalConstants.GeneralChatGroup,
-                    "TPA requests disabled.",
-                    EnumChatType.Notification);
+                messenger.SendInfo(player, "TPA requests disabled.", GlobalConstants.InfoLogChatGroup, (int)EnumChatType.CommandSuccess);
+                messenger.SendGeneral(player, "TPA requests disabled.", GlobalConstants.GeneralChatGroup, (int)EnumChatType.Notification);
             }
             else
             {
-                player.SendMessage(GlobalConstants.InfoLogChatGroup,
-                    "TPA requests enabled.",
-                    EnumChatType.CommandSuccess);
-
-                player.SendMessage(GlobalConstants.GeneralChatGroup,
-                    "TPA requests enabled.",
-                    EnumChatType.Notification);
+                messenger.SendInfo(player, "TPA requests enabled.", GlobalConstants.InfoLogChatGroup, (int)EnumChatType.CommandSuccess);
+                messenger.SendGeneral(player, "TPA requests enabled.", GlobalConstants.GeneralChatGroup, (int)EnumChatType.Notification);
             }
 
             return TextCommandResult.Success();

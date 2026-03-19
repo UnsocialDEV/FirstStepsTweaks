@@ -7,7 +7,7 @@ using Vintagestory.API.Server;
 
 namespace FirstStepsTweaks.Services
 {
-    public class GraveManager
+    public class GraveManager : IGraveRepository
     {
         private const string SaveKey = "fst_gravestones.v2";
         private const string LegacySaveKey = "fst_gravestones.v1";

@@ -1,7 +1,9 @@
 using System;
-using System.Collections.Generic;
 using FirstStepsTweaks.Config;
+using FirstStepsTweaks.Infrastructure.Messaging;
+using FirstStepsTweaks.Infrastructure.Teleport;
 using FirstStepsTweaks.Services;
+using FirstStepsTweaks.Teleport;
 using Vintagestory.API.Common;
 using Vintagestory.API.Config;
 using Vintagestory.API.MathTools;
@@ -14,34 +16,53 @@ using Vintagestory.API.Server;
 
 namespace FirstStepsTweaks.Commands
 {
-    public static class RtpCommands
+    public sealed class RtpCommands
     {
-        private static readonly Dictionary<string, long> LastRtpByPlayerUid = new Dictionary<string, long>();
-        private static readonly Random Random = new Random();
+        private readonly ICoreServerAPI api;
+        private readonly Random random = new Random();
+        private readonly TeleportConfig teleportConfig;
+        private readonly RtpConfig rtpConfig;
+        private readonly IPlayerMessenger messenger;
+        private readonly IBackLocationStore backLocationStore;
+        private readonly ITeleportWarmupService teleportWarmupService;
+        private readonly RtpCooldownStore cooldownStore;
 
-        private static TeleportConfig teleportConfig = new TeleportConfig();
-        private static RtpConfig rtpConfig = new RtpConfig();
-
-        public static void Register(ICoreServerAPI api, FirstStepsTweaksConfig config)
+        public RtpCommands(
+            ICoreServerAPI api,
+            FirstStepsTweaksConfig config,
+            IPlayerMessenger messenger,
+            IBackLocationStore backLocationStore,
+            ITeleportWarmupService teleportWarmupService,
+            RtpCooldownStore cooldownStore)
         {
+            this.api = api;
             teleportConfig = config?.Teleport ?? new TeleportConfig();
             rtpConfig = config?.Rtp ?? new RtpConfig();
+            this.messenger = messenger;
+            this.backLocationStore = backLocationStore;
+            this.teleportWarmupService = teleportWarmupService;
+            this.cooldownStore = cooldownStore;
+        }
 
+        public void Register()
+        {
+            /* commented out so its not registered and cant be used
             api.ChatCommands
                 .Create("rtp")
                 .WithDescription("Teleport to a random location")
                 .RequiresPlayer()
                 .RequiresPrivilege(Privilege.controlserver)
-                .HandleWith(args => RandomTeleport(api, args));
+                .HandleWith(RandomTeleport);
+            */
         }
 
-        private static TextCommandResult RandomTeleport(ICoreServerAPI api, TextCommandCallingArgs args)
+        private TextCommandResult RandomTeleport(TextCommandCallingArgs args)
         {
             var player = (IServerPlayer)args.Caller.Player;
             long nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             bool hasBypassCooldown = TeleportBypass.HasBypass(player);
 
-            if (rtpConfig.CooldownSeconds > 0 && LastRtpByPlayerUid.TryGetValue(player.PlayerUID, out long lastRtpMs))
+            if (rtpConfig.CooldownSeconds > 0 && cooldownStore.TryGetLastUse(player.PlayerUID, out long lastRtpMs))
             {
                 long remainingMs = (rtpConfig.CooldownSeconds * 1000L) - (nowMs - lastRtpMs);
                 if (remainingMs > 0)
@@ -53,42 +74,24 @@ namespace FirstStepsTweaks.Commands
                     }
                     else
                     {
-                        player.SendMessage(
-                            GlobalConstants.InfoLogChatGroup,
-                            $"You must wait {remainingSeconds}s before using /rtp again.",
-                            EnumChatType.CommandError
-                            );
-
-                        player.SendMessage(
-                            GlobalConstants.GeneralChatGroup,
-                            $"You must wait {remainingSeconds}s before using /rtp again.",
-                            EnumChatType.Notification
-                            );
+                        messenger.SendInfo(player, $"You must wait {remainingSeconds}s before using /rtp again.", GlobalConstants.InfoLogChatGroup, (int)EnumChatType.CommandError);
+                        messenger.SendGeneral(player, $"You must wait {remainingSeconds}s before using /rtp again.", GlobalConstants.GeneralChatGroup, (int)EnumChatType.Notification);
                         return TextCommandResult.Success();
                     }
                 }
             }
 
-            Vec3d destination = FindDestination(api, player);
+            Vec3d destination = FindDestination(player);
             if (destination == null)
             {
-                player.SendMessage(
-                    GlobalConstants.InfoLogChatGroup,
-                    "Failed to find a safe random destination. Try again.",
-                    EnumChatType.CommandError
-                );
-
-                player.SendMessage(
-                    GlobalConstants.GeneralChatGroup,
-                    "Failed to find a safe random destination. Try again.",
-                    EnumChatType.Notification
-                );
+                messenger.SendInfo(player, "Failed to find a safe random destination. Try again.", GlobalConstants.InfoLogChatGroup, (int)EnumChatType.CommandError);
+                messenger.SendGeneral(player, "Failed to find a safe random destination. Try again.", GlobalConstants.GeneralChatGroup, (int)EnumChatType.Notification);
                 return TextCommandResult.Success();
             }
 
             if (rtpConfig.UseWarmup && teleportConfig.WarmupSeconds > 0 && !hasBypassCooldown)
             {
-                StartWarmupTeleport(api, player, destination);
+                StartWarmupTeleport(player, destination);
             }
             else
             {
@@ -97,26 +100,17 @@ namespace FirstStepsTweaks.Commands
                     TeleportBypass.NotifyBypassingCooldown(player, "/rtp warmup");
                 }
 
-                BackCommands.RecordCurrentLocation(player);
+                backLocationStore.RecordCurrentLocation(player);
                 player.Entity.TeleportToDouble(destination.X, destination.Y, destination.Z);
-                player.SendMessage(
-                    GlobalConstants.InfoLogChatGroup,
-                    "Teleported to a random location.",
-                    EnumChatType.CommandSuccess
-                );
-
-                player.SendMessage(
-                    GlobalConstants.GeneralChatGroup,
-                    "Teleported to a random location.",
-                    EnumChatType.Notification
-                );
-                LastRtpByPlayerUid[player.PlayerUID] = nowMs;
+                messenger.SendInfo(player, "Teleported to a random location.", GlobalConstants.InfoLogChatGroup, (int)EnumChatType.CommandSuccess);
+                messenger.SendGeneral(player, "Teleported to a random location.", GlobalConstants.GeneralChatGroup, (int)EnumChatType.Notification);
+                cooldownStore.SetLastUse(player.PlayerUID, nowMs);
             }
 
             return TextCommandResult.Success();
         }
 
-        private static Vec3d FindDestination(ICoreServerAPI api, IServerPlayer player)
+        private Vec3d FindDestination(IServerPlayer player)
         {
             int attempts = Math.Max(1, rtpConfig.MaxAttempts);
             int minRadius = Math.Max(0, rtpConfig.MinRadius);
@@ -128,8 +122,8 @@ namespace FirstStepsTweaks.Commands
 
             for (int i = 0; i < attempts; i++)
             {
-                double angle = Random.NextDouble() * Math.PI * 2;
-                double distance = minRadius + (Random.NextDouble() * (maxRadius - minRadius));
+                double angle = random.NextDouble() * Math.PI * 2;
+                double distance = minRadius + (random.NextDouble() * (maxRadius - minRadius));
 
                 int baseX = (int)Math.Round(centerX + Math.Cos(angle) * distance);
                 int baseZ = (int)Math.Round(centerZ + Math.Sin(angle) * distance);
@@ -137,9 +131,9 @@ namespace FirstStepsTweaks.Commands
                 for (int sample = 0; sample < horizontalChecksPerAttempt; sample++)
                 {
                     // Try a tiny local spread around the sampled point so one tree/cave column does not waste the whole attempt.
-                    int x = baseX + Random.Next(-4, 5);
-                    int z = baseZ + Random.Next(-4, 5);
-                    Vec3d safeDestination = FindSafeDestinationInColumn(api, x, z);
+                    int x = baseX + random.Next(-4, 5);
+                    int z = baseZ + random.Next(-4, 5);
+                    Vec3d safeDestination = FindSafeDestinationInColumn(x, z);
                     if (safeDestination != null)
                     {
                         return safeDestination;
@@ -150,7 +144,7 @@ namespace FirstStepsTweaks.Commands
             return null;
         }
 
-        private static Vec3d FindSafeDestinationInColumn(ICoreServerAPI api, int x, int z)
+        private Vec3d FindSafeDestinationInColumn(int x, int z)
         {
             int terrainHeight = api.World.BlockAccessor.GetTerrainMapheightAt(new BlockPos(x, 0, z));
             if (terrainHeight <= 1)
@@ -194,69 +188,32 @@ namespace FirstStepsTweaks.Commands
             return block.BlockId != 0 && block.Replaceable < 6000;
         }
 
-        private static void StartWarmupTeleport(ICoreServerAPI api, IServerPlayer player, Vec3d destination)
+        private void StartWarmupTeleport(IServerPlayer player, Vec3d destination)
         {
-            double startX = player.Entity.Pos.X;
-            double startY = player.Entity.Pos.Y;
-            double startZ = player.Entity.Pos.Z;
-            int secondsRemaining = teleportConfig.WarmupSeconds;
-            long listenerId = 0;
-
-            player.SendMessage(
-                GlobalConstants.InfoLogChatGroup,
-                $"Teleporting to a random location in {teleportConfig.WarmupSeconds} seconds. Do not move.",
-                EnumChatType.CommandSuccess
-            );
-
-            player.SendMessage(
-                GlobalConstants.GeneralChatGroup,
-                $"Teleporting to a random location in {teleportConfig.WarmupSeconds} seconds. Do not move.",
-                EnumChatType.Notification
-            );
-
-            listenerId = api.Event.RegisterGameTickListener((dt) =>
+            teleportWarmupService.Begin(new TeleportWarmupRequest
             {
-                if (player?.Entity == null)
+                Player = player,
+                WarmupMessage = $"Teleporting to a random location in {teleportConfig.WarmupSeconds} seconds. Do not move.",
+                CountdownTemplate = "Teleporting in {0}...",
+                CancelMessage = "Teleport cancelled because you moved.",
+                SuccessIngameMessage = "Teleported to a random location.",
+                BypassContext = "/rtp warmup",
+                WarmupSeconds = teleportConfig.WarmupSeconds,
+                TickIntervalMs = teleportConfig.TickIntervalMs,
+                CancelMoveThreshold = teleportConfig.CancelMoveThreshold,
+                WarmupInfoChatType = (int)EnumChatType.CommandSuccess,
+                WarmupGeneralGroupId = GlobalConstants.GeneralChatGroup,
+                WarmupGeneralChatType = (int)EnumChatType.Notification,
+                CancelInfoChatType = (int)EnumChatType.CommandError,
+                CancelGeneralChatType = (int)EnumChatType.Notification,
+                AllowBypass = false,
+                ExecuteTeleport = () =>
                 {
-                    api.Event.UnregisterGameTickListener(listenerId);
-                    return;
+                    backLocationStore.RecordCurrentLocation(player);
+                    player.Entity.TeleportToDouble(destination.X, destination.Y, destination.Z);
+                    cooldownStore.SetLastUse(player.PlayerUID, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
                 }
-
-                double dx = Math.Abs(player.Entity.Pos.X - startX);
-                double dy = Math.Abs(player.Entity.Pos.Y - startY);
-                double dz = Math.Abs(player.Entity.Pos.Z - startZ);
-
-                if (dx > teleportConfig.CancelMoveThreshold || dy > teleportConfig.CancelMoveThreshold || dz > teleportConfig.CancelMoveThreshold)
-                {
-                    player.SendMessage(
-                        GlobalConstants.InfoLogChatGroup,
-                        "Teleport cancelled because you moved.",
-                        EnumChatType.CommandError
-                    );
-
-                    player.SendMessage(
-                        GlobalConstants.GeneralChatGroup,
-                        "Teleport cancelled because you moved.",
-                        EnumChatType.Notification
-                    );
-
-                    api.Event.UnregisterGameTickListener(listenerId);
-                    return;
-                }
-
-                if (secondsRemaining > 0)
-                {
-                    player.SendIngameError("no_permission", $"Teleporting in {secondsRemaining}...");
-                    secondsRemaining--;
-                    return;
-                }
-
-                BackCommands.RecordCurrentLocation(player);
-                player.Entity.TeleportToDouble(destination.X, destination.Y, destination.Z);
-                LastRtpByPlayerUid[player.PlayerUID] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-                player.SendIngameError("no_permission", "Teleported to a random location.");
-                api.Event.UnregisterGameTickListener(listenerId);
-            }, teleportConfig.TickIntervalMs);
+            });
         }
     }
 }

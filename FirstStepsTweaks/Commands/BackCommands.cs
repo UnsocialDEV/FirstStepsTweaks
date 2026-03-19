@@ -1,5 +1,6 @@
-using System.Collections.Generic;
 using FirstStepsTweaks.Config;
+using FirstStepsTweaks.Infrastructure.Messaging;
+using FirstStepsTweaks.Infrastructure.Teleport;
 using FirstStepsTweaks.Services;
 using Vintagestory.API.Common;
 using Vintagestory.API.Common.Entities;
@@ -9,36 +10,39 @@ using Vintagestory.API.Server;
 
 namespace FirstStepsTweaks.Commands
 {
-    public static class BackCommands
+    public sealed class BackCommands
     {
-        private static readonly Dictionary<string, Vec3d> LastPositionsByPlayerUid =
-            new Dictionary<string, Vec3d>();
+        private readonly ICoreServerAPI api;
+        private readonly TeleportConfig teleportConfig;
+        private readonly IPlayerMessenger messenger;
+        private readonly IBackLocationStore backLocationStore;
+        private readonly ITeleportWarmupService teleportWarmupService;
 
-        private static TeleportConfig teleportConfig = new TeleportConfig();
-
-        public static void Register(ICoreServerAPI api, FirstStepsTweaksConfig config)
+        public BackCommands(
+            ICoreServerAPI api,
+            FirstStepsTweaksConfig config,
+            IPlayerMessenger messenger,
+            IBackLocationStore backLocationStore,
+            ITeleportWarmupService teleportWarmupService)
         {
+            this.api = api;
             teleportConfig = config?.Teleport ?? new TeleportConfig();
+            this.messenger = messenger;
+            this.backLocationStore = backLocationStore;
+            this.teleportWarmupService = teleportWarmupService;
+        }
 
+        public void Register()
+        {
             api.ChatCommands
                 .Create("back")
                 .WithDescription("Teleport back to your last location")
                 .RequiresPlayer()
                 .RequiresPrivilege("firststepstweaks.back")
-                .HandleWith(args => Back(api, args));
+                .HandleWith(Back);
         }
 
-        public static void RecordCurrentLocation(IServerPlayer player)
-        {
-            if (player?.Entity?.Pos == null)
-            {
-                return;
-            }
-
-            LastPositionsByPlayerUid[player.PlayerUID] = new Vec3d(player.Entity.Pos.X, player.Entity.Pos.Y, player.Entity.Pos.Z);
-        }
-
-        public static void OnEntityDeath(Entity entity, DamageSource damageSource)
+        public void OnEntityDeath(Entity entity, DamageSource damageSource)
         {
             if (!(entity is EntityPlayer entityPlayer))
             {
@@ -51,27 +55,17 @@ namespace FirstStepsTweaks.Commands
                 return;
             }
 
-            LastPositionsByPlayerUid[player.PlayerUID] =
-                new Vec3d(player.Entity.Pos.X, player.Entity.Pos.Y, player.Entity.Pos.Z);
+            backLocationStore.Set(player.PlayerUID, new Vec3d(player.Entity.Pos.X, player.Entity.Pos.Y, player.Entity.Pos.Z));
         }
 
-        private static TextCommandResult Back(ICoreServerAPI api, TextCommandCallingArgs args)
+        private TextCommandResult Back(TextCommandCallingArgs args)
         {
             IServerPlayer player = (IServerPlayer)args.Caller.Player;
 
-            if (!LastPositionsByPlayerUid.TryGetValue(player.PlayerUID, out Vec3d lastLocation))
+            if (!backLocationStore.TryGet(player.PlayerUID, out Vec3d lastLocation))
             {
-                player.SendMessage(
-                    GlobalConstants.InfoLogChatGroup,
-                    "No previous location recorded.",
-                    EnumChatType.CommandSuccess
-                );
-
-                player.SendMessage(
-                    GlobalConstants.AllChatGroups,
-                    "No previous location recorded.",
-                    EnumChatType.Notification
-                );
+                messenger.SendInfo(player, "No previous location recorded.", GlobalConstants.InfoLogChatGroup, (int)EnumChatType.CommandSuccess);
+                messenger.SendGeneral(player, "No previous location recorded.", GlobalConstants.AllChatGroups, (int)EnumChatType.Notification);
                 return TextCommandResult.Success();
             }
 
@@ -79,83 +73,37 @@ namespace FirstStepsTweaks.Commands
             {
                 TeleportBypass.NotifyBypassingCooldown(player, "/back warmup");
 
-                Vec3d currentLocation =
-                    new Vec3d(player.Entity.Pos.X, player.Entity.Pos.Y, player.Entity.Pos.Z);
-
+                Vec3d currentLocation = new Vec3d(player.Entity.Pos.X, player.Entity.Pos.Y, player.Entity.Pos.Z);
                 player.Entity.TeleportToDouble(lastLocation.X, lastLocation.Y, lastLocation.Z);
-                LastPositionsByPlayerUid[player.PlayerUID] = currentLocation;
+                backLocationStore.Set(player.PlayerUID, currentLocation);
 
-                player.SendIngameError("no_permission", "Teleported to your last location.");
+                messenger.SendIngameError(player, "no_permission", "Teleported to your last location.");
                 return TextCommandResult.Success();
             }
 
-            double startX = player.Entity.Pos.X;
-            double startY = player.Entity.Pos.Y;
-            double startZ = player.Entity.Pos.Z;
-
-            int secondsRemaining = teleportConfig.WarmupSeconds;
-            long listenerId = 0;
-
-            player.SendMessage(
-                GlobalConstants.InfoLogChatGroup,
-                $"Teleporting to your previous location in {teleportConfig.WarmupSeconds} seconds. Do not move.",
-                EnumChatType.CommandSuccess
-                );
-
-            player.SendMessage(
-                    GlobalConstants.AllChatGroups,
-                    $"Teleporting to your previous location in {teleportConfig.WarmupSeconds} seconds. Do not move.",
-                    EnumChatType.Notification
-                );
-
-            listenerId = api.Event.RegisterGameTickListener((dt) =>
+            teleportWarmupService.Begin(new TeleportWarmupRequest
             {
-                if (player?.Entity == null)
+                Player = player,
+                WarmupMessage = $"Teleporting to your previous location in {teleportConfig.WarmupSeconds} seconds. Do not move.",
+                CountdownTemplate = "Teleporting to your last location in {0}...",
+                CancelMessage = "Teleport cancelled because you moved.",
+                SuccessIngameMessage = "Teleported to your last location.",
+                BypassContext = "/back warmup",
+                WarmupSeconds = teleportConfig.WarmupSeconds,
+                TickIntervalMs = teleportConfig.TickIntervalMs,
+                CancelMoveThreshold = teleportConfig.CancelMoveThreshold,
+                WarmupInfoChatType = (int)EnumChatType.CommandSuccess,
+                WarmupGeneralGroupId = GlobalConstants.AllChatGroups,
+                WarmupGeneralChatType = (int)EnumChatType.Notification,
+                CancelInfoChatType = (int)EnumChatType.CommandSuccess,
+                CancelGeneralChatType = (int)EnumChatType.Notification,
+                ExecuteTeleport = () =>
                 {
-                    api.Event.UnregisterGameTickListener(listenerId);
-                    return;
-                }
-
-                double dx = System.Math.Abs(player.Entity.Pos.X - startX);
-                double dy = System.Math.Abs(player.Entity.Pos.Y - startY);
-                double dz = System.Math.Abs(player.Entity.Pos.Z - startZ);
-
-                if (dx > teleportConfig.CancelMoveThreshold || dy > teleportConfig.CancelMoveThreshold || dz > teleportConfig.CancelMoveThreshold)
-                {
-                    player.SendMessage(
-                        GlobalConstants.InfoLogChatGroup,
-                        "Teleport cancelled because you moved.",
-                        EnumChatType.CommandSuccess
-                    );
-
-                    player.SendMessage(
-                        GlobalConstants.GeneralChatGroup,
-                        "Teleport cancelled because you moved.",
-                        EnumChatType.Notification
-                    );
-
-                    api.Event.UnregisterGameTickListener(listenerId);
-                    return;
-                }
-
-                if (secondsRemaining > 0)
-                {
-                    player.SendIngameError("no_permission", $"Teleporting to your last location in {secondsRemaining}...");
-                    secondsRemaining--;
-                }
-                else
-                {
-                    Vec3d currentLocation =
-                        new Vec3d(player.Entity.Pos.X, player.Entity.Pos.Y, player.Entity.Pos.Z);
-
+                    Vec3d currentLocation = new Vec3d(player.Entity.Pos.X, player.Entity.Pos.Y, player.Entity.Pos.Z);
                     player.Entity.TeleportToDouble(lastLocation.X, lastLocation.Y, lastLocation.Z);
-                    LastPositionsByPlayerUid[player.PlayerUID] = currentLocation;
-
-                    player.SendIngameError("no_permission", "Teleported to your last location.");
-
-                    api.Event.UnregisterGameTickListener(listenerId);
+                    backLocationStore.Set(player.PlayerUID, currentLocation);
                 }
-            }, teleportConfig.TickIntervalMs);
+            });
 
             return TextCommandResult.Success();
         }

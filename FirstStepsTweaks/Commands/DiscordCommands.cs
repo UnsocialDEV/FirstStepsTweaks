@@ -1,34 +1,41 @@
-﻿using FirstStepsTweaks.Config;
+using FirstStepsTweaks.Config;
+using FirstStepsTweaks.Infrastructure.Messaging;
 using Vintagestory.API.Common;
 using Vintagestory.API.Config;
 using Vintagestory.API.Server;
 
 namespace FirstStepsTweaks.Commands
 {
-    public class DiscordCommands
+    public sealed class DiscordCommands
     {
-        private static DiscordCommandConfig discordCommandConfig = new DiscordCommandConfig();
+        private readonly ICoreServerAPI api;
+        private readonly DiscordCommandConfig discordCommandConfig;
+        private readonly IPlayerMessenger messenger;
 
-        public static void Register(ICoreServerAPI api, FirstStepsTweaksConfig config)
+        public DiscordCommands(ICoreServerAPI api, FirstStepsTweaksConfig config, IPlayerMessenger messenger)
         {
+            this.api = api;
             discordCommandConfig = config?.DiscordCommand ?? new DiscordCommandConfig();
+            this.messenger = messenger;
+        }
 
+        public void Register()
+        {
             api.ChatCommands
                 .Create("discord")
                 .WithDescription("Displays the Discord invite")
                 .RequiresPlayer()
                 .RequiresPrivilege(Privilege.chat)
-                .HandleWith(args => Discord(api, args));
+                .HandleWith(Discord);
         }
 
-        private static TextCommandResult Discord(ICoreServerAPI api, TextCommandCallingArgs args)
+        private TextCommandResult Discord(TextCommandCallingArgs args)
         {
             IServerPlayer player = (IServerPlayer)args.Caller.Player;
-            var message = discordCommandConfig.InviteMessage;
+            string message = discordCommandConfig.InviteMessage;
 
-            player.SendMessage(GlobalConstants.GeneralChatGroup, message, EnumChatType.AllGroups);
-            player.SendMessage(GlobalConstants.InfoLogChatGroup, message, EnumChatType.Notification);
-
+            messenger.SendGeneral(player, message, GlobalConstants.GeneralChatGroup, (int)EnumChatType.AllGroups);
+            messenger.SendInfo(player, message, GlobalConstants.InfoLogChatGroup, (int)EnumChatType.Notification);
             return TextCommandResult.Success();
         }
     }

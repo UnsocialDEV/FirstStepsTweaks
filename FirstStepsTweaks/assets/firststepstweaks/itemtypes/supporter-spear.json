@@ -1,15 +1,15 @@
 {
-  "code": "donator-spear",
+  "code": "supporter-spear",
   "class": "ItemSpear",
   "maxstacksize": 1,
   "tags": ["weapon", "weapon-melee"],
   "damagedby": ["attacking"],
 
-  "durability": 300,
-  "AttackPower": 4.6,
-  "Damage": 10,
+  "durability": 96,
+  "AttackPower": 4,
+  "Damage": 8,
   "attackspeed": 1.1,
-  "attackRange": 4.0,
+  "attackRange": 3.5,
   "Tool": "Spear",
   "ToolTier": 3,
 

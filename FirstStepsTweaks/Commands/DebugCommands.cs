@@ -1,28 +1,19 @@
-﻿using FirstStepsTweaks.Config;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using Vintagestory.API.Common;
-using Vintagestory.API.Common.Entities;
 using Vintagestory.API.Config;
-using Vintagestory.API.Datastructures;
-using Vintagestory.API.MathTools;
 using Vintagestory.API.Server;
 
 namespace FirstStepsTweaks.Commands
 {
-    public class DebugCommands
+    public sealed class DebugCommands
     {
-        private ICoreServerAPI api;
+        private readonly ICoreServerAPI api;
 
         public DebugCommands(ICoreServerAPI api)
         {
             this.api = api;
         }
 
-        public static void Register(ICoreServerAPI api)
+        public void Register()
         {
             api.ChatCommands
                 .Create("fsdebug")
@@ -31,16 +22,17 @@ namespace FirstStepsTweaks.Commands
                 .RequiresPrivilege(Privilege.controlserver)
                 .BeginSubCommand("chattypes")
                     .WithDescription("Sends a message for each chat type to test formatting")
-                    .HandleWith(args => fsDebugChatTypes(api, args))
+                    .HandleWith(fsDebugChatTypes)
                 .EndSubCommand()
-                .HandleWith(args => fsDebug(api, args));
+                .HandleWith(fsDebug);
         }
 
-        private static TextCommandResult fsDebug(ICoreServerAPI api, TextCommandCallingArgs args)
+        private TextCommandResult fsDebug(TextCommandCallingArgs args)
         {
             return TextCommandResult.Success("Debug command for first steps tweaks");
         }
-        private static TextCommandResult fsDebugChatTypes(ICoreServerAPI api, TextCommandCallingArgs args)
+
+        private TextCommandResult fsDebugChatTypes(TextCommandCallingArgs args)
         {
             IServerPlayer player = (IServerPlayer)args.Caller.Player;
 

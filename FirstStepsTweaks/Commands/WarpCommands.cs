@@ -2,30 +2,50 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using FirstStepsTweaks.Config;
+using FirstStepsTweaks.Infrastructure.Messaging;
+using FirstStepsTweaks.Infrastructure.Teleport;
 using FirstStepsTweaks.Services;
+using FirstStepsTweaks.Teleport;
 using Vintagestory.API.Common;
 using Vintagestory.API.Config;
 using Vintagestory.API.Server;
 
 namespace FirstStepsTweaks.Commands
 {
-    public static class WarpCommands
+    public sealed class WarpCommands
     {
-        private const string WarpDataKey = "fst_warps";
+        private readonly ICoreServerAPI api;
+        private readonly TeleportConfig teleportConfig;
+        private readonly WarpStore warpStore;
+        private readonly IPlayerMessenger messenger;
+        private readonly IBackLocationStore backLocationStore;
+        private readonly ITeleportWarmupService teleportWarmupService;
 
-        private static TeleportConfig teleportConfig = new TeleportConfig();
-
-        public static void Register(ICoreServerAPI api, FirstStepsTweaksConfig config)
+        public WarpCommands(
+            ICoreServerAPI api,
+            FirstStepsTweaksConfig config,
+            WarpStore warpStore,
+            IPlayerMessenger messenger,
+            IBackLocationStore backLocationStore,
+            ITeleportWarmupService teleportWarmupService)
         {
+            this.api = api;
             teleportConfig = config?.Teleport ?? new TeleportConfig();
+            this.warpStore = warpStore;
+            this.messenger = messenger;
+            this.backLocationStore = backLocationStore;
+            this.teleportWarmupService = teleportWarmupService;
+        }
 
+        public void Register()
+        {
             api.ChatCommands
                 .Create("setwarp")
                 .WithDescription("Set a named warp at your current location")
                 .RequiresPlayer()
                 .RequiresPrivilege(Privilege.controlserver)
                 .WithArgs(api.ChatCommands.Parsers.Word("name"))
-                .HandleWith(args => SetWarp(api, args));
+                .HandleWith(SetWarp);
 
             api.ChatCommands
                 .Create("delwarp")
@@ -33,7 +53,7 @@ namespace FirstStepsTweaks.Commands
                 .RequiresPlayer()
                 .RequiresPrivilege(Privilege.controlserver)
                 .WithArgs(api.ChatCommands.Parsers.Word("name"))
-                .HandleWith(args => DelWarp(api, args));
+                .HandleWith(DelWarp);
 
             api.ChatCommands
                 .Create("warp")
@@ -41,83 +61,73 @@ namespace FirstStepsTweaks.Commands
                 .RequiresPlayer()
                 .RequiresPrivilege(Privilege.chat)
                 .WithArgs(api.ChatCommands.Parsers.Word("name"))
-                .HandleWith(args => WarpTo(api, args));
+                .HandleWith(WarpTo);
 
             api.ChatCommands
                 .Create("warps")
                 .WithDescription("List all available warps")
                 .RequiresPlayer()
                 .RequiresPrivilege(Privilege.chat)
-                .HandleWith(args => ListWarps(api, args));
+                .HandleWith(ListWarps);
         }
 
-        private static TextCommandResult SetWarp(ICoreServerAPI api, TextCommandCallingArgs args)
+        private TextCommandResult SetWarp(TextCommandCallingArgs args)
         {
             IServerPlayer player = (IServerPlayer)args.Caller.Player;
-            string warpName = NormalizeWarpName((string)args[0]);
+            string warpName = warpStore.NormalizeWarpName((string)args[0]);
 
             if (string.IsNullOrWhiteSpace(warpName))
             {
-                player.SendMessage(GlobalConstants.InfoLogChatGroup, "Warp name cannot be empty.", EnumChatType.CommandSuccess);
-                player.SendMessage(GlobalConstants.GeneralChatGroup, "Warp name cannot be empty.", EnumChatType.Notification);
-
+                messenger.SendDual(player, "Warp name cannot be empty.", (int)EnumChatType.CommandSuccess, (int)EnumChatType.Notification);
                 return TextCommandResult.Success();
             }
 
-            Dictionary<string, double[]> warps = LoadWarps(api);
+            Dictionary<string, double[]> warps = warpStore.LoadWarps();
             var pos = player.Entity.Pos;
             bool updated = warps.ContainsKey(warpName);
 
             warps[warpName] = new[] { pos.X, pos.Y, pos.Z };
-            SaveWarps(api, warps);
+            warpStore.SaveWarps(warps);
 
             string action = updated ? "updated" : "set";
-            player.SendMessage(GlobalConstants.InfoLogChatGroup, $"Warp '{warpName}' {action}.", EnumChatType.CommandSuccess);
-            player.SendMessage(GlobalConstants.GeneralChatGroup, $"Warp '{warpName}' {action}.", EnumChatType.Notification);
+            messenger.SendDual(player, $"Warp '{warpName}' {action}.", (int)EnumChatType.CommandSuccess, (int)EnumChatType.Notification);
 
             return TextCommandResult.Success();
         }
 
-        private static TextCommandResult DelWarp(ICoreServerAPI api, TextCommandCallingArgs args)
+        private TextCommandResult DelWarp(TextCommandCallingArgs args)
         {
             IServerPlayer player = (IServerPlayer)args.Caller.Player;
-            string warpName = NormalizeWarpName((string)args[0]);
+            string warpName = warpStore.NormalizeWarpName((string)args[0]);
 
             if (string.IsNullOrWhiteSpace(warpName))
             {
-                player.SendMessage(GlobalConstants.InfoLogChatGroup, "Warp name cannot be empty.", EnumChatType.CommandSuccess);
-                player.SendMessage(GlobalConstants.GeneralChatGroup, "Warp name cannot be empty.", EnumChatType.Notification);
-
+                messenger.SendDual(player, "Warp name cannot be empty.", (int)EnumChatType.CommandSuccess, (int)EnumChatType.Notification);
                 return TextCommandResult.Success();
             }
 
-            Dictionary<string, double[]> warps = LoadWarps(api);
+            Dictionary<string, double[]> warps = warpStore.LoadWarps();
             if (!warps.Remove(warpName))
             {
-                player.SendMessage(GlobalConstants.InfoLogChatGroup, $"Warp '{warpName}' does not exist.", EnumChatType.CommandSuccess);
-                player.SendMessage(GlobalConstants.GeneralChatGroup, $"Warp '{warpName}' does not exist.", EnumChatType.Notification);
-
+                messenger.SendDual(player, $"Warp '{warpName}' does not exist.", (int)EnumChatType.CommandSuccess, (int)EnumChatType.Notification);
                 return TextCommandResult.Success();
             }
 
-            SaveWarps(api, warps);
-            player.SendMessage(GlobalConstants.InfoLogChatGroup, $"Warp '{warpName}' deleted.", EnumChatType.CommandSuccess);
-            player.SendMessage(GlobalConstants.GeneralChatGroup, $"Warp '{warpName}' deleted.", EnumChatType.Notification);
+            warpStore.SaveWarps(warps);
+            messenger.SendDual(player, $"Warp '{warpName}' deleted.", (int)EnumChatType.CommandSuccess, (int)EnumChatType.Notification);
 
             return TextCommandResult.Success();
         }
 
-        private static TextCommandResult WarpTo(ICoreServerAPI api, TextCommandCallingArgs args)
+        private TextCommandResult WarpTo(TextCommandCallingArgs args)
         {
             IServerPlayer player = (IServerPlayer)args.Caller.Player;
-            string warpName = NormalizeWarpName((string)args[0]);
+            string warpName = warpStore.NormalizeWarpName((string)args[0]);
 
-            Dictionary<string, double[]> warps = LoadWarps(api);
+            Dictionary<string, double[]> warps = warpStore.LoadWarps();
             if (!warps.TryGetValue(warpName, out double[] target) || target == null || target.Length != 3)
             {
-                player.SendMessage(GlobalConstants.InfoLogChatGroup, $"Warp '{warpName}' does not exist.", EnumChatType.CommandSuccess);
-                player.SendMessage(GlobalConstants.GeneralChatGroup, $"Warp '{warpName}' does not exist.", EnumChatType.Notification);
-
+                messenger.SendDual(player, $"Warp '{warpName}' does not exist.", (int)EnumChatType.CommandSuccess, (int)EnumChatType.Notification);
                 return TextCommandResult.Success();
             }
 
@@ -128,89 +138,46 @@ namespace FirstStepsTweaks.Commands
             if (teleportConfig.WarmupSeconds > 0 && TeleportBypass.HasBypass(player))
             {
                 TeleportBypass.NotifyBypassingCooldown(player, $"/warp {warpName} warmup");
-                BackCommands.RecordCurrentLocation(player);
+                backLocationStore.RecordCurrentLocation(player);
                 player.Entity.TeleportToDouble(targetX, targetY, targetZ);
-                player.SendIngameError("no_permission", $"Teleported to warp '{warpName}'.");
+                messenger.SendIngameError(player, "no_permission", $"Teleported to warp '{warpName}'.");
                 return TextCommandResult.Success();
             }
 
-            double startX = player.Entity.Pos.X;
-            double startY = player.Entity.Pos.Y;
-            double startZ = player.Entity.Pos.Z;
-
-            int secondsRemaining = teleportConfig.WarmupSeconds;
-            long listenerId = 0;
-
-            player.SendMessage(
-                GlobalConstants.InfoLogChatGroup,
-                $"Teleporting to warp '{warpName}' in {teleportConfig.WarmupSeconds} seconds. Do not move.",
-                EnumChatType.CommandSuccess
-            );
-
-            player.SendMessage(
-                GlobalConstants.GeneralChatGroup,
-                $"Teleporting to warp '{warpName}' in {teleportConfig.WarmupSeconds} seconds. Do not move.",
-                EnumChatType.Notification
-            );
-
-            listenerId = api.Event.RegisterGameTickListener((dt) =>
+            teleportWarmupService.Begin(new TeleportWarmupRequest
             {
-                if (player?.Entity == null)
+                Player = player,
+                WarmupMessage = $"Teleporting to warp '{warpName}' in {teleportConfig.WarmupSeconds} seconds. Do not move.",
+                CountdownTemplate = $"Teleporting to warp '{warpName}' in {{0}}...",
+                CancelMessage = "Teleport cancelled because you moved.",
+                SuccessIngameMessage = $"Teleported to warp '{warpName}'.",
+                BypassContext = $"/warp {warpName} warmup",
+                WarmupSeconds = teleportConfig.WarmupSeconds,
+                TickIntervalMs = teleportConfig.TickIntervalMs,
+                CancelMoveThreshold = teleportConfig.CancelMoveThreshold,
+                WarmupInfoChatType = (int)EnumChatType.CommandSuccess,
+                WarmupGeneralGroupId = GlobalConstants.GeneralChatGroup,
+                WarmupGeneralChatType = (int)EnumChatType.Notification,
+                CancelInfoChatType = (int)EnumChatType.CommandSuccess,
+                CancelGeneralChatType = (int)EnumChatType.Notification,
+                ExecuteTeleport = () =>
                 {
-                    api.Event.UnregisterGameTickListener(listenerId);
-                    return;
-                }
-
-                double dx = Math.Abs(player.Entity.Pos.X - startX);
-                double dy = Math.Abs(player.Entity.Pos.Y - startY);
-                double dz = Math.Abs(player.Entity.Pos.Z - startZ);
-
-                if (dx > teleportConfig.CancelMoveThreshold || dy > teleportConfig.CancelMoveThreshold || dz > teleportConfig.CancelMoveThreshold)
-                {
-                    player.SendMessage(
-                        GlobalConstants.InfoLogChatGroup,
-                        "Teleport cancelled because you moved.",
-                        EnumChatType.CommandSuccess
-                    );
-
-                    player.SendMessage(
-                        GlobalConstants.GeneralChatGroup,
-                        "Teleport cancelled because you moved.",
-                        EnumChatType.Notification
-                    );
-
-                    api.Event.UnregisterGameTickListener(listenerId);
-                    return;
-                }
-
-                if (secondsRemaining > 0)
-                {
-                    player.SendIngameError("no_permission", $"Teleporting to warp '{warpName}' in {secondsRemaining}...");
-                    secondsRemaining--;
-                }
-                else
-                {
-                    BackCommands.RecordCurrentLocation(player);
+                    backLocationStore.RecordCurrentLocation(player);
                     player.Entity.TeleportToDouble(targetX, targetY, targetZ);
-                    player.SendIngameError("no_permission", $"Teleported to warp '{warpName}'.");
-
-                    api.Event.UnregisterGameTickListener(listenerId);
                 }
-            }, teleportConfig.TickIntervalMs);
+            });
 
             return TextCommandResult.Success();
         }
 
-        private static TextCommandResult ListWarps(ICoreServerAPI api, TextCommandCallingArgs args)
+        private TextCommandResult ListWarps(TextCommandCallingArgs args)
         {
             IServerPlayer player = (IServerPlayer)args.Caller.Player;
-            Dictionary<string, double[]> warps = LoadWarps(api);
+            Dictionary<string, double[]> warps = warpStore.LoadWarps();
 
             if (warps.Count == 0)
             {
-                player.SendMessage(GlobalConstants.InfoLogChatGroup, "No warps have been set.", EnumChatType.CommandSuccess);
-                player.SendMessage(GlobalConstants.GeneralChatGroup, "No warps have been set.", EnumChatType.Notification);
-
+                messenger.SendDual(player, "No warps have been set.", (int)EnumChatType.CommandSuccess, (int)EnumChatType.Notification);
                 return TextCommandResult.Success();
             }
 
@@ -223,24 +190,8 @@ namespace FirstStepsTweaks.Commands
                 sb.AppendLine($"- {pair.Key}: {pair.Value[0]:0.##}, {pair.Value[1]:0.##}, {pair.Value[2]:0.##}");
             }
 
-            player.SendMessage(GlobalConstants.InfoLogChatGroup, sb.ToString().TrimEnd(), EnumChatType.Notification);
+            messenger.SendInfo(player, sb.ToString().TrimEnd(), GlobalConstants.InfoLogChatGroup, (int)EnumChatType.Notification);
             return TextCommandResult.Success();
-        }
-
-        private static Dictionary<string, double[]> LoadWarps(ICoreServerAPI api)
-        {
-            return api.WorldManager.SaveGame.GetData<Dictionary<string, double[]>>(WarpDataKey)
-                ?? new Dictionary<string, double[]>(StringComparer.OrdinalIgnoreCase);
-        }
-
-        private static void SaveWarps(ICoreServerAPI api, Dictionary<string, double[]> warps)
-        {
-            api.WorldManager.SaveGame.StoreData(WarpDataKey, warps);
-        }
-
-        private static string NormalizeWarpName(string warpName)
-        {
-            return (warpName ?? string.Empty).Trim().ToLowerInvariant();
         }
     }
 }

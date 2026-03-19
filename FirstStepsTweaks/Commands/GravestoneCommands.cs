@@ -1,3 +1,6 @@
+using FirstStepsTweaks.Infrastructure.Messaging;
+using FirstStepsTweaks.Infrastructure.Players;
+using FirstStepsTweaks.Infrastructure.Teleport;
 using FirstStepsTweaks.Services;
 using System;
 using System.Linq;
@@ -9,17 +12,33 @@ using Vintagestory.API.Server;
 
 namespace FirstStepsTweaks.Commands
 {
-    public static class GravestoneCommands
+    public sealed class GravestoneCommands
     {
         private const string AdminPrivilege = "firststepstweaks.graveadmin";
         private const string CurrentLocationSelector = "currentloc";
 
-        private static GravestoneService gravestoneService;
+        private readonly ICoreServerAPI api;
+        private readonly GravestoneService gravestoneService;
+        private readonly IPlayerMessenger messenger;
+        private readonly IPlayerLookup playerLookup;
+        private readonly IBackLocationStore backLocationStore;
 
-        public static void Register(ICoreServerAPI api, GravestoneService service)
+        public GravestoneCommands(
+            ICoreServerAPI api,
+            GravestoneService gravestoneService,
+            IPlayerMessenger messenger,
+            IPlayerLookup playerLookup,
+            IBackLocationStore backLocationStore)
         {
-            gravestoneService = service;
+            this.api = api;
+            this.gravestoneService = gravestoneService;
+            this.messenger = messenger;
+            this.playerLookup = playerLookup;
+            this.backLocationStore = backLocationStore;
+        }
 
+        public void Register()
+        {
             api.ChatCommands
                 .Create("graveadmin")
                 .WithDescription("Admin tools for gravestone management")
@@ -27,7 +46,7 @@ namespace FirstStepsTweaks.Commands
                 .RequiresPrivilege(AdminPrivilege)
                 .BeginSubCommand("list")
                     .WithDescription("List active gravestones")
-                    .HandleWith(args => List(api, args))
+                    .HandleWith(List)
                 .EndSubCommand()
                 .BeginSubCommand("giveblock")
                     .WithDescription("Give gravestone block item(s) to a player")
@@ -35,7 +54,7 @@ namespace FirstStepsTweaks.Commands
                         api.ChatCommands.Parsers.Word("player"),
                         api.ChatCommands.Parsers.OptionalWord("quantity")
                     )
-                    .HandleWith(args => GiveBlock(api, args))
+                    .HandleWith(GiveBlock)
                 .EndSubCommand()
                 .BeginSubCommand("dupeitems")
                     .WithDescription("Duplicate stored gravestone items to a player without removing the gravestone. Use currentloc <player> while looking at a gravestone, or <graveId> <player>.")
@@ -43,7 +62,7 @@ namespace FirstStepsTweaks.Commands
                         api.ChatCommands.Parsers.Word("graveId"),
                         api.ChatCommands.Parsers.Word("player")
                     )
-                    .HandleWith(args => DuplicateItems(api, args))
+                    .HandleWith(DuplicateItems)
                 .EndSubCommand()
                 .BeginSubCommand("restore")
                     .WithDescription("Restore gravestone items to a player and remove the gravestone. Use currentloc <player> while looking at a gravestone, or <graveId> <player>.")
@@ -51,24 +70,24 @@ namespace FirstStepsTweaks.Commands
                         api.ChatCommands.Parsers.Word("graveId"),
                         api.ChatCommands.Parsers.Word("player")
                     )
-                    .HandleWith(args => Restore(api, args))
+                    .HandleWith(Restore)
                 .EndSubCommand()
                 .BeginSubCommand("remove")
                     .WithDescription("Remove a gravestone without restoring items. Use currentloc while looking at a gravestone, or provide <graveId>.")
                     .WithArgs(api.ChatCommands.Parsers.OptionalWord("graveId"))
-                    .HandleWith(args => Remove(api, args))
+                    .HandleWith(Remove)
                 .EndSubCommand()
                 .BeginSubCommand("teleport")
                     .WithDescription("Teleport directly to a gravestone. Use currentloc while looking at a gravestone, or provide <graveId>.")
                     .WithArgs(api.ChatCommands.Parsers.OptionalWord("graveId"))
-                    .HandleWith(args => Teleport(api, args))
+                    .HandleWith(Teleport)
                 .EndSubCommand();
         }
 
-        private static TextCommandResult List(ICoreServerAPI api, TextCommandCallingArgs args)
+        private TextCommandResult List(TextCommandCallingArgs args)
         {
             IServerPlayer caller = args.Caller.Player as IServerPlayer;
-            if (caller == null || gravestoneService == null)
+            if (caller == null)
             {
                 return TextCommandResult.Success();
             }
@@ -93,21 +112,20 @@ namespace FirstStepsTweaks.Commands
 
                 long ageMinutes = Math.Max(0, (now - grave.CreatedUnixMs) / 60000L);
                 string claimState = gravestoneService.IsPubliclyClaimable(grave) ? "public" : "owner-only";
-
                 sb.AppendLine($"- {grave.GraveId} | owner={grave.OwnerName} | pos={grave.Dimension}:{grave.X},{grave.Y},{grave.Z} | age={ageMinutes}m | {claimState}");
             }
 
-            caller.SendMessage(GlobalConstants.InfoLogChatGroup, sb.ToString().TrimEnd(), EnumChatType.Notification);
+            messenger.SendInfo(caller, sb.ToString().TrimEnd(), GlobalConstants.InfoLogChatGroup, (int)EnumChatType.Notification);
             return TextCommandResult.Success();
         }
 
-        private static TextCommandResult GiveBlock(ICoreServerAPI api, TextCommandCallingArgs args)
+        private TextCommandResult GiveBlock(TextCommandCallingArgs args)
         {
             IServerPlayer caller = args.Caller.Player as IServerPlayer;
             string targetName = args[0] as string;
             string quantityRaw = args[1] as string;
 
-            IServerPlayer target = ResolveOnlinePlayer(api, targetName);
+            IServerPlayer target = ResolveOnlinePlayer(targetName);
             if (target == null)
             {
                 SendBoth(caller, "Target player is not online.");
@@ -132,7 +150,7 @@ namespace FirstStepsTweaks.Commands
             return TextCommandResult.Success();
         }
 
-        private static TextCommandResult DuplicateItems(ICoreServerAPI api, TextCommandCallingArgs args)
+        private TextCommandResult DuplicateItems(TextCommandCallingArgs args)
         {
             IServerPlayer caller = args.Caller.Player as IServerPlayer;
             string graveSelector = args[0] as string;
@@ -144,7 +162,7 @@ namespace FirstStepsTweaks.Commands
                 return TextCommandResult.Success();
             }
 
-            IServerPlayer target = ResolveOnlinePlayer(api, targetName);
+            IServerPlayer target = ResolveOnlinePlayer(targetName);
             if (target == null)
             {
                 SendBoth(caller, "Target player is not online.");
@@ -162,7 +180,7 @@ namespace FirstStepsTweaks.Commands
             return TextCommandResult.Success();
         }
 
-        private static TextCommandResult Restore(ICoreServerAPI api, TextCommandCallingArgs args)
+        private TextCommandResult Restore(TextCommandCallingArgs args)
         {
             IServerPlayer caller = args.Caller.Player as IServerPlayer;
             string graveSelector = args[0] as string;
@@ -174,7 +192,7 @@ namespace FirstStepsTweaks.Commands
                 return TextCommandResult.Success();
             }
 
-            IServerPlayer target = ResolveOnlinePlayer(api, targetName);
+            IServerPlayer target = ResolveOnlinePlayer(targetName);
             if (target == null)
             {
                 SendBoth(caller, "Target player is not online.");
@@ -192,7 +210,7 @@ namespace FirstStepsTweaks.Commands
             return TextCommandResult.Success();
         }
 
-        private static TextCommandResult Remove(ICoreServerAPI api, TextCommandCallingArgs args)
+        private TextCommandResult Remove(TextCommandCallingArgs args)
         {
             IServerPlayer caller = args.Caller.Player as IServerPlayer;
             string graveSelector = args[0] as string;
@@ -209,13 +227,12 @@ namespace FirstStepsTweaks.Commands
                 return TextCommandResult.Success();
             }
 
-            bool success = gravestoneService.TryRemoveGrave(graveId, out string message);
+            gravestoneService.TryRemoveGrave(graveId, out string message);
             SendBoth(caller, message);
-
             return TextCommandResult.Success();
         }
 
-        private static TextCommandResult Teleport(ICoreServerAPI api, TextCommandCallingArgs args)
+        private TextCommandResult Teleport(TextCommandCallingArgs args)
         {
             IServerPlayer caller = args.Caller.Player as IServerPlayer;
             string graveSelector = args[0] as string;
@@ -244,7 +261,7 @@ namespace FirstStepsTweaks.Commands
                 return TextCommandResult.Success();
             }
 
-            BackCommands.RecordCurrentLocation(caller);
+            backLocationStore.RecordCurrentLocation(caller);
 
             if (entityPlayer.Pos != null && entityPlayer.Pos.Dimension != grave.Dimension)
             {
@@ -255,13 +272,12 @@ namespace FirstStepsTweaks.Commands
                 target.X,
                 target.Y,
                 target.Z,
-                () => SendBoth(caller, $"Teleported to gravestone '{grave.GraveId}' at {grave.Dimension}:{grave.X},{grave.Y},{grave.Z}.")
-            );
+                () => SendBoth(caller, $"Teleported to gravestone '{grave.GraveId}' at {grave.Dimension}:{grave.X},{grave.Y},{grave.Z}."));
 
             return TextCommandResult.Success();
         }
 
-        private static bool TryResolveGraveSelector(IServerPlayer caller, string selector, out string graveId, out string message)
+        private bool TryResolveGraveSelector(IServerPlayer caller, string selector, out string graveId, out string message)
         {
             graveId = string.Empty;
             message = string.Empty;
@@ -281,34 +297,19 @@ namespace FirstStepsTweaks.Commands
             return true;
         }
 
-        private static IServerPlayer ResolveOnlinePlayer(ICoreServerAPI api, string query)
+        private IServerPlayer ResolveOnlinePlayer(string query)
         {
             if (string.IsNullOrWhiteSpace(query))
             {
                 return null;
             }
 
-            foreach (IServerPlayer player in api.World.AllOnlinePlayers)
-            {
-                if (player.PlayerName.Equals(query, StringComparison.OrdinalIgnoreCase)
-                    || player.PlayerUID.Equals(query, StringComparison.OrdinalIgnoreCase))
-                {
-                    return player;
-                }
-            }
-
-            return null;
+            return playerLookup.FindOnlinePlayerByName(query) ?? playerLookup.FindOnlinePlayerByUid(query);
         }
 
-        private static void SendBoth(IServerPlayer player, string message)
+        private void SendBoth(IServerPlayer player, string message)
         {
-            if (player == null || string.IsNullOrWhiteSpace(message))
-            {
-                return;
-            }
-
-            player.SendMessage(GlobalConstants.InfoLogChatGroup, message, EnumChatType.CommandSuccess);
-            player.SendMessage(GlobalConstants.GeneralChatGroup, message, EnumChatType.Notification);
+            messenger.SendDual(player, message, (int)EnumChatType.CommandSuccess, (int)EnumChatType.Notification);
         }
     }
 }
