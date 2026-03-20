@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Reflection;
@@ -102,7 +103,8 @@ namespace FirstStepsTweaks.Infrastructure.LandClaims
             string claimName = ReadStringOrNull(claim, "Name", "ClaimName", "Description", "Label");
             string ownerUid = ReadStringOrNull(claim, "OwnedByPlayerUid", "OwnerUid", "OwnerPlayerUid", "PlayerUid", "Uid");
             string ownerName = ReadStringOrNull(claim, "OwnedByPlayerName", "OwnerName", "OwnerPlayerName", "LastKnownOwnerName", "PlayerName");
-            return new LandClaimInfo(key, claimName, ownerUid, ownerName);
+            Cuboidi[] areas = ReadClaimAreas(claim);
+            return new LandClaimInfo(key, claimName, ownerUid, ownerName, areas);
         }
 
         private static string ReadAreaFingerprint(object claim)
@@ -168,6 +170,93 @@ namespace FirstStepsTweaks.Infrastructure.LandClaims
             }
 
             return null;
+        }
+
+        private static Cuboidi[] ReadClaimAreas(object claim)
+        {
+            if (!(ReadObjectOrNull(claim, "Areas") is IEnumerable enumerable))
+            {
+                return Array.Empty<Cuboidi>();
+            }
+
+            var areas = new List<Cuboidi>();
+            foreach (object entry in enumerable)
+            {
+                if (TryReadArea(entry, out Cuboidi area))
+                {
+                    areas.Add(area);
+                }
+            }
+
+            return areas.Count == 0 ? Array.Empty<Cuboidi>() : areas.ToArray();
+        }
+
+        private static bool TryReadArea(object entry, out Cuboidi area)
+        {
+            area = null;
+            if (entry == null)
+            {
+                return false;
+            }
+
+            if (entry is Cuboidi cuboid)
+            {
+                area = cuboid.Clone();
+                return true;
+            }
+
+            int? minX = ReadIntOrNull(entry, "MinX", "X1");
+            int? minY = ReadIntOrNull(entry, "MinY", "Y1");
+            int? minZ = ReadIntOrNull(entry, "MinZ", "Z1");
+            int? maxX = ReadIntOrNull(entry, "MaxX", "X2");
+            int? maxY = ReadIntOrNull(entry, "MaxY", "Y2");
+            int? maxZ = ReadIntOrNull(entry, "MaxZ", "Z2");
+
+            if (!minX.HasValue || !minY.HasValue || !minZ.HasValue || !maxX.HasValue || !maxY.HasValue || !maxZ.HasValue)
+            {
+                return false;
+            }
+
+            area = new Cuboidi
+            {
+                X1 = minX.Value,
+                Y1 = minY.Value,
+                Z1 = minZ.Value,
+                X2 = maxX.Value,
+                Y2 = maxY.Value,
+                Z2 = maxZ.Value
+            };
+
+            return true;
+        }
+
+        private static int? ReadIntOrNull(object obj, params string[] names)
+        {
+            object value = ReadObjectOrNull(obj, names);
+            if (value == null)
+            {
+                return null;
+            }
+
+            if (value is int intValue)
+            {
+                return intValue;
+            }
+
+            if (value is IConvertible convertible)
+            {
+                try
+                {
+                    return convertible.ToInt32(CultureInfo.InvariantCulture);
+                }
+                catch
+                {
+                }
+            }
+
+            return int.TryParse(value.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed)
+                ? parsed
+                : (int?)null;
         }
     }
 }

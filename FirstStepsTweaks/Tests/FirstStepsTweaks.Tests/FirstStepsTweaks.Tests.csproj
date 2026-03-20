@@ -5,6 +5,9 @@
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <VintagestoryApiPath Condition="'$(VintagestoryApiPath)' == '' and '$(VINTAGESTORY_API_PATH)' != ''">$(VINTAGESTORY_API_PATH)</VintagestoryApiPath>
+    <VintagestoryApiPath Condition="'$(VintagestoryApiPath)' == '' and Exists('$(MSBuildProjectDirectory)\\..\\..\\lib\\VintagestoryAPI.dll')">$(MSBuildProjectDirectory)\..\..\lib\VintagestoryAPI.dll</VintagestoryApiPath>
+    <VintagestoryApiPath Condition="'$(VintagestoryApiPath)' == '' and Exists('C:\Users\daytonwatson\Desktop\VintagestoryAPI.dll')">C:\Users\daytonwatson\Desktop\VintagestoryAPI.dll</VintagestoryApiPath>
   </PropertyGroup>
 
   <ItemGroup>
@@ -14,6 +17,19 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Reference Include="VintagestoryAPI">
+      <HintPath>$(VintagestoryApiPath)</HintPath>
+      <Private>true</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\FirstStepsTweaks.csproj" />
   </ItemGroup>
+
+  <Target Name="ValidateVintagestoryApiReference" BeforeTargets="ResolveReferences">
+    <Error
+      Condition="'$(VintagestoryApiPath)' == '' or !Exists('$(VintagestoryApiPath)')"
+      Text="VintagestoryAPI.dll not found. Set -p:VintagestoryApiPath=... or VINTAGESTORY_API_PATH to the API DLL location." />
+  </Target>
 </Project>

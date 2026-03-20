@@ -38,7 +38,7 @@ namespace FirstStepsTweaks
             var config = api.LoadModConfig<FirstStepsTweaksConfig>(ConfigFileName);
             if (config != null)
             {
-                return config;
+                return ApplyConfigUpgrades(api, config);
             }
 
             config = api.LoadModConfig<FirstStepsTweaksConfig>(LegacyConfigFileName);
@@ -46,12 +46,25 @@ namespace FirstStepsTweaks
             {
                 api.StoreModConfig(config, ConfigFileName);
                 api.Logger.Notification($"[FirstStepsTweaks] Migrated config file '{LegacyConfigFileName}' to '{ConfigFileName}' for cross-platform compatibility.");
-                return config;
+                return ApplyConfigUpgrades(api, config);
             }
 
             config = new FirstStepsTweaksConfig();
             api.StoreModConfig(config, ConfigFileName);
             api.Logger.Warning($"[FirstStepsTweaks] Created config file {ConfigFileName}. Review and adjust as needed.");
+            return config;
+        }
+
+        private FirstStepsTweaksConfig ApplyConfigUpgrades(ICoreServerAPI api, FirstStepsTweaksConfig config)
+        {
+            var joinConfigUpgrader = new JoinConfigUpgrader();
+            if (!joinConfigUpgrader.TryUpgradeReturningJoinMessage(config))
+            {
+                return config;
+            }
+
+            api.StoreModConfig(config, ConfigFileName);
+            api.Logger.Notification($"[FirstStepsTweaks] Updated '{ConfigFileName}' join message template to include cumulative playtime.");
             return config;
         }
 

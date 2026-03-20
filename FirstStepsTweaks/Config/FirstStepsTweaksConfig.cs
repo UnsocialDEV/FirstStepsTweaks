@@ -20,6 +20,7 @@ namespace FirstStepsTweaks.Config
         public bool EnableDebugCommand { get; set; } = true;
         public bool EnableDiscordCommand { get; set; } = true;
         public bool EnableSpawnCommands { get; set; } = true;
+        public bool EnableStuckCommand { get; set; } = true;
         public bool EnableBackCommand { get; set; } = true;
         public bool EnableHomeCommands { get; set; } = true;
         public bool EnableKitCommands { get; set; } = true;
@@ -53,8 +54,12 @@ namespace FirstStepsTweaks.Config
 
     public class JoinConfig
     {
-        public string FirstJoinMessage { get; set; } = "Welcome {player} to the server, this is their first time joining!";
-        public string ReturningJoinMessage { get; set; } = "Welcome back {player}! It's been {days} in-game day(s) since your last visit.";
+        public const string DefaultFirstJoinMessage = "Welcome {player} to the server, this is their first time joining!";
+        public const string LegacyReturningJoinMessage = "Welcome back {player}! It's been {days} in-game day(s) since your last visit.";
+        public const string DefaultReturningJoinMessage = "Welcome back {player}! It's been {days} in-game day(s) since your last visit, you have played for {playtime} hours.";
+
+        public string FirstJoinMessage { get; set; } = DefaultFirstJoinMessage;
+        public string ReturningJoinMessage { get; set; } = DefaultReturningJoinMessage;
     }
 
     public class DiscordCommandConfig

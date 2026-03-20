@@ -1,6 +1,8 @@
 using FirstStepsTweaks.Commands;
 using FirstStepsTweaks.Config;
+using FirstStepsTweaks.Infrastructure.Teleport;
 using FirstStepsTweaks.Teleport;
+using FirstStepsTweaks.Services;
 using Vintagestory.API.Server;
 
 namespace FirstStepsTweaks.Features
@@ -12,6 +14,7 @@ namespace FirstStepsTweaks.Features
         private readonly BackCommands backCommands;
         private readonly HomeCommands homeCommands;
         private readonly SpawnCommands spawnCommands;
+        private readonly StuckCommand stuckCommand;
         private readonly WarpCommands warpCommands;
         private readonly RtpCommands rtpCommands;
         private readonly TpaCommands tpaCommands;
@@ -24,6 +27,13 @@ namespace FirstStepsTweaks.Features
             backCommands = new BackCommands(api, config, runtime.Messenger, runtime.BackLocationStore, runtime.TeleportWarmupService);
             homeCommands = new HomeCommands(api, config, new HomeStore(), runtime.Messenger, runtime.BackLocationStore, runtime.TeleportWarmupService);
             spawnCommands = new SpawnCommands(api, config, new SpawnStore(api), runtime.Messenger, runtime.BackLocationStore, runtime.TeleportWarmupService);
+            stuckCommand = new StuckCommand(
+                api,
+                config,
+                runtime.Messenger,
+                runtime.BackLocationStore,
+                runtime.TeleportWarmupService,
+                new LandClaimEscapeService(runtime.LandClaimAccessor, new TeleportColumnSafetyScanner(api)));
             warpCommands = new WarpCommands(api, config, new WarpStore(api), runtime.Messenger, runtime.BackLocationStore, runtime.TeleportWarmupService);
             rtpCommands = new RtpCommands(api, config, runtime.Messenger, runtime.BackLocationStore, runtime.TeleportWarmupService, new RtpCooldownStore());
             tpaCommands = new TpaCommands(
@@ -53,6 +63,11 @@ namespace FirstStepsTweaks.Features
             if (config.Features.EnableSpawnCommands)
             {
                 spawnCommands.Register();
+            }
+
+            if (config.Features.EnableStuckCommand)
+            {
+                stuckCommand.Register();
             }
 
             if (config.Features.EnableWarpCommands)

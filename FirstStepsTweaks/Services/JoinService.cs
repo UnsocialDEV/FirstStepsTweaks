@@ -7,51 +7,82 @@ namespace FirstStepsTweaks.Services
 {
     public sealed class JoinService
     {
-        private const string FirstJoinKey = "fst_firstjoin";
-        private const string LastSeenDayKey = "fst_lastseenday";
-
         private readonly ICoreServerAPI api;
         private readonly JoinConfig joinConfig;
         private readonly bool enableJoinBroadcasts;
         private readonly JoinMessageFormatter formatter;
+        private readonly JoinHistoryStore joinHistoryStore;
+        private readonly PlayerPlaytimeStore playtimeStore;
+        private readonly ActivePlaySessionTracker activePlaySessionTracker;
+        private readonly PlaytimeFormatter playtimeFormatter;
 
         public JoinService(ICoreServerAPI api, FirstStepsTweaksConfig config)
-            : this(api, config, new JoinMessageFormatter())
+            : this(
+                api,
+                config,
+                new JoinMessageFormatter(),
+                new JoinHistoryStore(),
+                new PlayerPlaytimeStore(),
+                new ActivePlaySessionTracker(),
+                new PlaytimeFormatter())
         {
         }
 
-        public JoinService(ICoreServerAPI api, FirstStepsTweaksConfig config, JoinMessageFormatter formatter)
+        public JoinService(
+            ICoreServerAPI api,
+            FirstStepsTweaksConfig config,
+            JoinMessageFormatter formatter,
+            JoinHistoryStore joinHistoryStore,
+            PlayerPlaytimeStore playtimeStore,
+            ActivePlaySessionTracker activePlaySessionTracker,
+            PlaytimeFormatter playtimeFormatter)
         {
             this.api = api;
             joinConfig = config?.Join ?? new JoinConfig();
             enableJoinBroadcasts = config?.Features?.EnableJoinBroadcasts ?? true;
             this.formatter = formatter;
+            this.joinHistoryStore = joinHistoryStore;
+            this.playtimeStore = playtimeStore;
+            this.activePlaySessionTracker = activePlaySessionTracker;
+            this.playtimeFormatter = playtimeFormatter;
         }
 
         public void OnPlayerNowPlaying(IServerPlayer player)
         {
-            if (player == null || !enableJoinBroadcasts)
+            if (player == null)
             {
                 return;
             }
 
-            byte[] data = player.GetModdata(FirstJoinKey);
+            activePlaySessionTracker.StartSession(player.PlayerUID, DateTime.UtcNow);
             double currentTotalDays = api.World.Calendar.TotalDays;
 
-            if (data == null)
+            if (!joinHistoryStore.HasJoinedBefore(player))
             {
-                api.BroadcastMessageToAllGroups(
-                    formatter.FormatFirstJoin(joinConfig.FirstJoinMessage, player.PlayerName),
-                    EnumChatType.AllGroups
-                );
+                joinHistoryStore.MarkFirstJoinRecorded(player);
 
-                player.SetModdata(FirstJoinKey, new byte[] { 1 });
+                if (enableJoinBroadcasts)
+                {
+                    api.BroadcastMessageToAllGroups(
+                        formatter.FormatFirstJoin(joinConfig.FirstJoinMessage, player.PlayerName),
+                        EnumChatType.AllGroups
+                    );
+                }
+
                 return;
             }
 
-            int daysSinceLastSeen = GetDaysSinceLastSeen(player, currentTotalDays);
+            if (!enableJoinBroadcasts)
+            {
+                return;
+            }
+
+            int daysSinceLastSeen = joinHistoryStore.GetDaysSinceLastSeen(player, currentTotalDays);
+            long totalPlayedSeconds = playtimeStore.GetTotalPlayedSeconds(player);
+            string formattedPlaytime = playtimeFormatter.FormatHours(totalPlayedSeconds);
+
             api.BroadcastMessageToAllGroups(
-                formatter.FormatReturningJoin(joinConfig.ReturningJoinMessage, player.PlayerName, daysSinceLastSeen),
+                formatter.FormatReturningJoin(joinConfig.ReturningJoinMessage, player.PlayerName, daysSinceLastSeen, formattedPlaytime),
                 EnumChatType.AllGroups
             );
         }
@@ -63,19 +94,12 @@ namespace FirstStepsTweaks.Services
                 return;
             }
 
-            player.SetModdata(LastSeenDayKey, BitConverter.GetBytes(api.World.Calendar.TotalDays));
-        }
-
-        private int GetDaysSinceLastSeen(IServerPlayer player, double currentTotalDays)
-        {
-            byte[] lastSeenData = player.GetModdata(LastSeenDayKey);
-            if (lastSeenData == null || lastSeenData.Length != sizeof(double))
+            if (activePlaySessionTracker.TryStopSession(player.PlayerUID, DateTime.UtcNow, out long playedSeconds))
             {
-                return 0;
+                playtimeStore.AddPlayedSeconds(player, playedSeconds);
             }
 
-            double lastSeenTotalDays = BitConverter.ToDouble(lastSeenData, 0);
-            return Math.Max(0, (int)Math.Floor(currentTotalDays - lastSeenTotalDays));
+            joinHistoryStore.RecordLastSeenDay(player, api.World.Calendar.TotalDays);
         }
     }
 }
