@@ -6,6 +6,7 @@ FirstStepsTweaks is a server-side Vintage Story mod that groups together a set o
 
 - Teleport quality-of-life commands: `/back`, `/home`, `/sethome`, `/delhome`, `/spawn`, `/setspawn`, `/warp`, `/warps`, `/setwarp`, `/delwarp`, `/rtp`, `/tpa`, `/tpaccept`, `/tpadeny`, `/tpacancel`, `/tpatoggle`
 - Join and return messages
+- Donator chat prefixes with tier precedence
 - Join-time invulnerability handling
 - Land claim enter/exit notifications
 - Discord chat relay and `/discord`
@@ -209,6 +210,7 @@ Discord integration is isolated from the rest of the mod:
 | Feature | Main entry point | Main responsibilities |
 |---|---|---|
 | Join | `JoinFeature` | Join broadcasts, return messaging, join invulnerability, land claim notifications |
+| Chat | `ChatFeature` | Donator chat prefix formatting and chat event wiring |
 | Teleport | `TeleportFeature` | Back/home/spawn/warp/rtp/tpa commands, warmups, request and cooldown state |
 | Discord | `DiscordFeature` | Game-to-Discord relay, Discord-to-game relay, Discord invite command |
 | Utility | `UtilityFeature` | Kits, online listing, wind reporting, admin heal/feed, debug helpers |
@@ -256,6 +258,7 @@ Used for temporary state that does not need to survive a restart. Examples:
 The main config object is `FirstStepsTweaksConfig`. Major sections are:
 
 - `Features`: feature toggles and high-level enable flags
+- `Chat`: donor chat prefix toggle and prefix format
 - `Teleport`: warmup timing, movement cancel threshold, TPA expiration
 - `Rtp`: radius, attempts, cooldown, center selection
 - `Join`: first-join and returning-player message templates
@@ -264,6 +267,29 @@ The main config object is `FirstStepsTweaksConfig`. Major sections are:
 - `Utility`: wind thresholds and admin name list
 - `Corpse`: gravestone settings
 - `LandClaims`: enter/exit notification settings
+
+## Donator chat prefixes
+
+Donator chat prefixes are controlled by the `Chat` config section:
+
+- `EnableDonatorPrefixes`: enables the in-game donor prefix hook
+- `DonatorPrefixFormat`: prefix template, defaulting to `[{tier}]`
+
+Tier precedence is:
+
+- `Founder`
+- `Patron`
+- `Sponsor`
+- `Contributor`
+- `Supporter`
+
+Privileges used for donor chat prefixes:
+
+- `firststepstweaks.supporter`
+- `firststepstweaks.contributor`
+- `firststepstweaks.sponsor`
+- `firststepstweaks.patron`
+- `firststepstweaks.founder`
 
 When adding config:
 

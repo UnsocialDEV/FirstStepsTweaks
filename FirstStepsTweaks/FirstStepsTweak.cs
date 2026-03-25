@@ -24,6 +24,7 @@ namespace FirstStepsTweaks
 
             new JoinFeature(api, config, runtime).Register();
             new TeleportFeature(api, config, runtime).Register();
+            new ChatFeature(api, config).Register();
             new DiscordFeature(api, config, runtime).Register();
             new UtilityFeature(api, config, runtime).Register();
 
@@ -79,13 +80,37 @@ namespace FirstStepsTweaks
             api.Permissions.RegisterPrivilege(
                 "firststepstweaks.supporterkit",
                 "Allows the player to use the /supporterkit command to receive a special donator kit.",
-                true
+                false
             );
 
             api.Permissions.RegisterPrivilege(
                 "firststepstweaks.supporter",
                 "Allows access to supporter tier features.",
-                true
+                false
+            );
+
+            api.Permissions.RegisterPrivilege(
+                "firststepstweaks.contributor",
+                "Allows access to contributor tier donator chat prefixes.",
+                false
+            );
+
+            api.Permissions.RegisterPrivilege(
+                "firststepstweaks.sponsor",
+                "Allows access to sponsor tier donator chat prefixes.",
+                false
+            );
+
+            api.Permissions.RegisterPrivilege(
+                "firststepstweaks.patron",
+                "Allows access to patron tier donator chat prefixes.",
+                false
+            );
+
+            api.Permissions.RegisterPrivilege(
+                "firststepstweaks.founder",
+                "Allows access to founder tier donator chat prefixes.",
+                false
             );
 
             api.Permissions.RegisterPrivilege(

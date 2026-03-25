@@ -8,6 +8,8 @@ namespace FirstStepsTweaks.Discord
         public string BotToken { get; set; } = "";
         public string ChannelId { get; set; } = "";
         public string WebhookUrl { get; set; } = "";
+        public string GuildId { get; set; } = "";
+        public string LinkChannelId { get; set; } = "";
 
         // Optional behavior
         public int PollMs { get; set; } = 5000;                 // 5000–10000 recommended
@@ -16,6 +18,8 @@ namespace FirstStepsTweaks.Discord
         public bool RelayDiscordToGame { get; set; } = true;
         public bool RelayJoinLeave = true;
         public bool RelayWorldUpdates { get; set; } = true;
+        public bool EnableRoleSync { get; set; } = true;
+        public int LinkCodeExpiryMinutes { get; set; } = 15;
         public int WorldUpdatePollMs { get; set; } = 5000;
 
         // Optional filters

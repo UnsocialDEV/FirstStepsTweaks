@@ -21,6 +21,8 @@ namespace FirstStepsTweaks.Discord
         private readonly DiscordLastMessageStore lastMessageStore;
         private readonly IDiscordMessageTranslator messageTranslator;
         private readonly IDiscordWebhookClient webhookClient;
+        private readonly DiscordPlayerAvatarService avatarService;
+        private readonly DiscordRelayMessageNormalizer relayMessageNormalizer;
         private DiscordBridgeConfig config;
         private readonly SemaphoreSlim pollLock = new SemaphoreSlim(1, 1);
         private string lastMessageId;
@@ -30,9 +32,11 @@ namespace FirstStepsTweaks.Discord
         private int lastDayNumber;
         private string lastSeasonName;
 
-        public DiscordBridge(ICoreServerAPI api)
+        public DiscordBridge(ICoreServerAPI api, DiscordPlayerAvatarService avatarService, DiscordRelayMessageNormalizer relayMessageNormalizer)
         {
             this.api = api;
+            this.avatarService = avatarService;
+            this.relayMessageNormalizer = relayMessageNormalizer;
             configStore = new DiscordConfigStore(api);
             lastMessageStore = new DiscordLastMessageStore(api);
             messageTranslator = new DiscordMessageTranslator();
@@ -102,14 +106,10 @@ namespace FirstStepsTweaks.Discord
 
             string clean = StripVsFormatting(message);
 
-            // Remove "PlayerName: " prefix if present
-            string prefix2 = player.PlayerName + ": ";
-            if (clean.StartsWith(prefix2))
-            {
-                clean = clean.Substring(prefix2.Length);
-            }
+            clean = relayMessageNormalizer.NormalizePlayerChat(player.PlayerName, clean);
 
             _ = SendPlainToDiscord(
+                player.PlayerUID,
                 player.PlayerName,
                 clean
             );
@@ -120,16 +120,20 @@ namespace FirstStepsTweaks.Discord
             return messageTranslator.StripVsFormatting(input);
         }
 
-        private async Task SendPlainToDiscord(string username, string message)
+        private async Task SendPlainToDiscord(string playerUid, string username, string message)
         {
             if (!IsConfigured()) return;
 
             string mappedMessage = messageTranslator.ReplaceGameMentionsWithDiscordMentions(message, config.GameMentionMap);
+            string avatarUrl = avatarService == null
+                ? null
+                : await avatarService.TryGetAvatarUrlAsync(playerUid);
 
             var payload = new
             {
                 username = username,
                 content = mappedMessage,
+                avatar_url = avatarUrl,
                 allowed_mentions = new
                 {
                     parse = new[] { "users" }
@@ -242,7 +246,7 @@ namespace FirstStepsTweaks.Discord
                 }
             }
 
-            _ = SendPlainToDiscord("Death", $"💀 {deathMessage}");
+            _ = SendPlainToDiscord(null, "Death", $"💀 {deathMessage}");
         }
 
         private async void OnWorldUpdateTick(float dt)

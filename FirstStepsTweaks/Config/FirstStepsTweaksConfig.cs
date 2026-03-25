@@ -5,6 +5,7 @@ namespace FirstStepsTweaks.Config
     public class FirstStepsTweaksConfig
     {
         public FeatureToggles Features { get; set; } = new FeatureToggles();
+        public ChatConfig Chat { get; set; } = new ChatConfig();
         public TeleportConfig Teleport { get; set; } = new TeleportConfig();
         public RtpConfig Rtp { get; set; } = new RtpConfig();
         public JoinConfig Join { get; set; } = new JoinConfig();
@@ -32,6 +33,17 @@ namespace FirstStepsTweaks.Config
         public bool EnableCorpseAdminCommands { get; set; } = true;
         public bool EnableJoinBroadcasts { get; set; } = true;
         public bool EnableLandClaimNotifications { get; set; } = true;
+    }
+
+    public class ChatConfig
+    {
+        public bool EnableDonatorPrefixes { get; set; } = true;
+        public string DonatorPrefixFormat { get; set; } = "{tier}";
+        public string SupporterPrefix { get; set; } = "•S";
+        public string ContributorPrefix { get; set; } = "•C";
+        public string SponsorPrefix { get; set; } = "•SP";
+        public string PatronPrefix { get; set; } = "•P";
+        public string FounderPrefix { get; set; } = "•F";
     }
 
     public class TeleportConfig
