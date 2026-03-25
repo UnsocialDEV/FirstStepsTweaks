@@ -23,9 +23,13 @@ namespace FirstStepsTweaks.Features
         {
             this.api = api;
             this.config = config;
+            var homeStore = new HomeStore();
+            var homeLimitResolver = new PlayerHomeLimitResolver();
+            var homeSlotPolicy = new HomeSlotPolicy();
+            var homeAccessPolicy = new HomeAccessPolicy();
 
             backCommands = new BackCommands(api, config, runtime.Messenger, runtime.BackLocationStore, runtime.TeleportWarmupService);
-            homeCommands = new HomeCommands(api, config, new HomeStore(), runtime.Messenger, runtime.BackLocationStore, runtime.TeleportWarmupService);
+            homeCommands = new HomeCommands(api, config, homeStore, runtime.Messenger, runtime.BackLocationStore, runtime.TeleportWarmupService, homeLimitResolver, homeSlotPolicy, homeAccessPolicy);
             spawnCommands = new SpawnCommands(api, config, new SpawnStore(api), runtime.Messenger, runtime.BackLocationStore, runtime.TeleportWarmupService);
             stuckCommand = new StuckCommand(
                 api,

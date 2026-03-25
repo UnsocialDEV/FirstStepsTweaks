@@ -52,6 +52,17 @@ namespace FirstStepsTweaks.Config
         public double CancelMoveThreshold { get; set; } = 0.1;
         public int TickIntervalMs { get; set; } = 1000;
         public int TpaExpireMs { get; set; } = 180000;
+        public HomeLimitConfig HomeLimits { get; set; } = new HomeLimitConfig();
+    }
+
+    public class HomeLimitConfig
+    {
+        public int Default { get; set; } = 1;
+        public int Supporter { get; set; } = 2;
+        public int Contributor { get; set; } = 3;
+        public int Sponsor { get; set; } = 4;
+        public int Patron { get; set; } = 5;
+        public int Founder { get; set; } = 6;
     }
 
     public class RtpConfig

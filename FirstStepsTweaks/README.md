@@ -4,7 +4,7 @@ FirstStepsTweaks is a server-side Vintage Story mod that groups together a set o
 
 ## What the mod includes
 
-- Teleport quality-of-life commands: `/back`, `/home`, `/sethome`, `/delhome`, `/spawn`, `/setspawn`, `/warp`, `/warps`, `/setwarp`, `/delwarp`, `/rtp`, `/tpa`, `/tpaccept`, `/tpadeny`, `/tpacancel`, `/tpatoggle`
+- Teleport quality-of-life commands: `/back`, `/homes`, `/home [name]`, `/sethome [name]`, `/delhome <name>`, `/spawn`, `/setspawn`, `/warp`, `/warps`, `/setwarp`, `/delwarp`, `/rtp`, `/tpa`, `/tpaccept`, `/tpadeny`, `/tpacancel`, `/tpatoggle`
 - Join and return messages
 - Donator chat prefixes with tier precedence
 - Join-time invulnerability handling
@@ -239,7 +239,7 @@ Used for shared server state that must survive restarts. Examples:
 
 Used for player-scoped persistent state. Examples:
 
-- home position
+- named home positions with legacy single-home migration
 - starter/winter/supporter kit claims
 - join history and last seen day
 - TPA enable/disable preference
@@ -259,7 +259,7 @@ The main config object is `FirstStepsTweaksConfig`. Major sections are:
 
 - `Features`: feature toggles and high-level enable flags
 - `Chat`: donor chat prefix toggle and prefix format
-- `Teleport`: warmup timing, movement cancel threshold, TPA expiration
+- `Teleport`: warmup timing, movement cancel threshold, TPA expiration, and per-tier home limits
 - `Rtp`: radius, attempts, cooldown, center selection
 - `Join`: first-join and returning-player message templates
 - `DiscordCommand`: text for the `/discord` command
@@ -297,6 +297,32 @@ When adding config:
 - keep related values together
 - use sensible defaults so a missing setting does not break startup
 - add a feature toggle when the behavior is optional
+
+## Named homes
+
+Homes are now named and the command surface is:
+
+- `/homes`
+- `/sethome [name]`
+- `/home [name]`
+- `/delhome <name>`
+
+Home names are normalized case-insensitively. Existing legacy single-home player data is migrated automatically to the named home `home` the first time the player accesses homes.
+
+If a player has no homes yet, bare `/sethome` creates a default home named `home`. Bare `/home` teleports to the `home` entry when present, otherwise it falls back to the player's oldest created home. `/homes` marks whichever home bare `/home` will use as `(default)`.
+
+If a player's donor tier is downgraded, extra homes are kept in storage but become inaccessible until the tier supports them again. `/homes` shows which homes are currently accessible and which are stored but locked by the current tier.
+
+Home limits are controlled by `Teleport.HomeLimits`:
+
+- `Default`
+- `Supporter`
+- `Contributor`
+- `Sponsor`
+- `Patron`
+- `Founder`
+
+Default config values increase by tier, but admins can customize each tier independently.
 
 ## Build and development
 
