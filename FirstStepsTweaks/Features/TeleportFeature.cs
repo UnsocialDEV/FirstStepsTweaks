@@ -25,21 +25,23 @@ namespace FirstStepsTweaks.Features
             this.config = config;
             var homeStore = new HomeStore();
             var homeLimitResolver = new PlayerHomeLimitResolver();
+            var warmupResolver = new PlayerTeleportWarmupResolver();
             var homeSlotPolicy = new HomeSlotPolicy();
             var homeAccessPolicy = new HomeAccessPolicy();
 
-            backCommands = new BackCommands(api, config, runtime.Messenger, runtime.BackLocationStore, runtime.TeleportWarmupService);
-            homeCommands = new HomeCommands(api, config, homeStore, runtime.Messenger, runtime.BackLocationStore, runtime.TeleportWarmupService, homeLimitResolver, homeSlotPolicy, homeAccessPolicy);
-            spawnCommands = new SpawnCommands(api, config, new SpawnStore(api), runtime.Messenger, runtime.BackLocationStore, runtime.TeleportWarmupService);
+            backCommands = new BackCommands(api, config, runtime.Messenger, runtime.BackLocationStore, runtime.TeleportWarmupService, warmupResolver);
+            homeCommands = new HomeCommands(api, config, homeStore, runtime.Messenger, runtime.BackLocationStore, runtime.TeleportWarmupService, homeLimitResolver, warmupResolver, homeSlotPolicy, homeAccessPolicy);
+            spawnCommands = new SpawnCommands(api, config, new SpawnStore(api), runtime.Messenger, runtime.BackLocationStore, runtime.TeleportWarmupService, warmupResolver);
             stuckCommand = new StuckCommand(
                 api,
                 config,
                 runtime.Messenger,
                 runtime.BackLocationStore,
                 runtime.TeleportWarmupService,
+                warmupResolver,
                 new LandClaimEscapeService(runtime.LandClaimAccessor, new TeleportColumnSafetyScanner(api)));
-            warpCommands = new WarpCommands(api, config, new WarpStore(api), runtime.Messenger, runtime.BackLocationStore, runtime.TeleportWarmupService);
-            rtpCommands = new RtpCommands(api, config, runtime.Messenger, runtime.BackLocationStore, runtime.TeleportWarmupService, new RtpCooldownStore());
+            warpCommands = new WarpCommands(api, config, new WarpStore(api), runtime.Messenger, runtime.BackLocationStore, runtime.TeleportWarmupService, warmupResolver);
+            rtpCommands = new RtpCommands(api, config, runtime.Messenger, runtime.BackLocationStore, runtime.TeleportWarmupService, warmupResolver, new RtpCooldownStore());
             tpaCommands = new TpaCommands(
                 api,
                 config,
@@ -47,6 +49,7 @@ namespace FirstStepsTweaks.Features
                 runtime.PlayerLookup,
                 runtime.TeleportWarmupService,
                 runtime.BackLocationStore,
+                warmupResolver,
                 new TpaPreferenceStore(),
                 new TpaRequestStore());
         }

@@ -19,6 +19,7 @@ namespace FirstStepsTweaks.Commands
         private readonly IPlayerLookup playerLookup;
         private readonly ITeleportWarmupService teleportWarmupService;
         private readonly IBackLocationStore backLocationStore;
+        private readonly PlayerTeleportWarmupResolver warmupResolver;
         private readonly TpaPreferenceStore preferenceStore;
         private readonly TpaRequestStore requestStore;
 
@@ -29,6 +30,7 @@ namespace FirstStepsTweaks.Commands
             IPlayerLookup playerLookup,
             ITeleportWarmupService teleportWarmupService,
             IBackLocationStore backLocationStore,
+            PlayerTeleportWarmupResolver warmupResolver,
             TpaPreferenceStore preferenceStore,
             TpaRequestStore requestStore)
         {
@@ -38,6 +40,7 @@ namespace FirstStepsTweaks.Commands
             this.playerLookup = playerLookup;
             this.teleportWarmupService = teleportWarmupService;
             this.backLocationStore = backLocationStore;
+            this.warmupResolver = warmupResolver;
             this.preferenceStore = preferenceStore;
             this.requestStore = requestStore;
         }
@@ -165,15 +168,16 @@ namespace FirstStepsTweaks.Commands
 
         private void StartTeleportWarmup(IServerPlayer requester, IServerPlayer target)
         {
+            int effectiveWarmupSeconds = warmupResolver.Resolve(requester, teleportConfig);
             teleportWarmupService.Begin(new TeleportWarmupRequest
             {
                 Player = requester,
-                WarmupMessage = $"Teleporting in {teleportConfig.WarmupSeconds} seconds. Do not move.",
+                WarmupMessage = $"Teleporting in {effectiveWarmupSeconds} seconds. Do not move.",
                 CountdownTemplate = "Teleporting in {0}...",
                 CancelMessage = "Teleport cancelled because you moved.",
                 SuccessIngameMessage = "Teleported.",
                 BypassContext = "/tpa warmup",
-                WarmupSeconds = teleportConfig.WarmupSeconds,
+                WarmupSeconds = effectiveWarmupSeconds,
                 TickIntervalMs = teleportConfig.TickIntervalMs,
                 CancelMoveThreshold = teleportConfig.CancelMoveThreshold,
                 WarmupInfoChatType = (int)EnumChatType.CommandSuccess,

@@ -15,7 +15,7 @@ namespace FirstStepsTweaks.Features
         private readonly FeatureRuntime runtime;
         private readonly DiscordBridge discordBridge;
         private readonly DiscordLinkPoller linkPoller;
-        private readonly PlayerDonatorPrivilegeSyncService privilegeSyncService;
+        private readonly PlayerDonatorRoleSyncService roleSyncService;
         private readonly DiscordLinkCommands linkCommands;
 
         public DiscordFeature(ICoreServerAPI api, FirstStepsTweaksConfig config, FeatureRuntime runtime)
@@ -34,6 +34,7 @@ namespace FirstStepsTweaks.Features
                 discordConfig.LinkCodeExpiryMinutes);
             var webhookClient = new DiscordWebhookClient();
             var privilegeCatalog = new DonatorPrivilegeCatalog();
+            var roleAssigner = new PlayerRoleAssigner(api);
             var avatarService = new DiscordPlayerAvatarService(
                 discordConfig,
                 linkedAccountStore,
@@ -41,15 +42,16 @@ namespace FirstStepsTweaks.Features
                 new DiscordAvatarUrlResolver());
             discordBridge = new DiscordBridge(api, avatarService, new DiscordRelayMessageNormalizer());
 
-            privilegeSyncService = new PlayerDonatorPrivilegeSyncService(
+            roleSyncService = new PlayerDonatorRoleSyncService(
                 api,
                 discordConfig,
                 linkedAccountStore,
                 new DiscordMemberRoleClient(webhookClient),
                 new DiscordRoleNameResolver(),
-                new DiscordDonatorPrivilegePlanner(privilegeCatalog),
-                new PlayerPrivilegeMutator(api),
-                privilegeCatalog,
+                new DiscordDonatorRolePlanner(privilegeCatalog),
+                new PlayerRoleCodeReader(),
+                roleAssigner,
+                new PlayerDefaultRoleResetter(api, roleAssigner),
                 runtime.Messenger);
 
             linkPoller = new DiscordLinkPoller(
@@ -60,20 +62,21 @@ namespace FirstStepsTweaks.Features
                 linkService,
                 linkCodeParser,
                 runtime.PlayerLookup,
+                roleSyncService,
                 runtime.Messenger);
 
             linkCommands = new DiscordLinkCommands(
                 api,
                 discordConfig,
                 linkService,
-                privilegeSyncService,
+                roleSyncService,
                 runtime.Messenger);
         }
 
         public void Register()
         {
             api.Event.PlayerChat += discordBridge.OnPlayerChat;
-            api.Event.PlayerNowPlaying += privilegeSyncService.OnPlayerNowPlaying;
+            api.Event.PlayerNowPlaying += roleSyncService.OnPlayerNowPlaying;
             linkPoller.Register();
 
             if (config.Features.EnableDiscordCommand)

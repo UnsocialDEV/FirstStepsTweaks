@@ -48,7 +48,10 @@ namespace FirstStepsTweaks.Config
 
     public class TeleportConfig
     {
+        public const int DefaultDonatorWarmupSeconds = 3;
+
         public int WarmupSeconds { get; set; } = 10;
+        public int? DonatorWarmupSeconds { get; set; }
         public double CancelMoveThreshold { get; set; } = 0.1;
         public int TickIntervalMs { get; set; } = 1000;
         public int TpaExpireMs { get; set; } = 180000;

@@ -13,20 +13,20 @@ namespace FirstStepsTweaks.Commands
         private readonly ICoreServerAPI api;
         private readonly DiscordBridgeConfig discordConfig;
         private readonly DiscordLinkService linkService;
-        private readonly PlayerDonatorPrivilegeSyncService privilegeSyncService;
+        private readonly PlayerDonatorRoleSyncService roleSyncService;
         private readonly IPlayerMessenger messenger;
 
         public DiscordLinkCommands(
             ICoreServerAPI api,
             DiscordBridgeConfig discordConfig,
             DiscordLinkService linkService,
-            PlayerDonatorPrivilegeSyncService privilegeSyncService,
+            PlayerDonatorRoleSyncService roleSyncService,
             IPlayerMessenger messenger)
         {
             this.api = api;
             this.discordConfig = discordConfig;
             this.linkService = linkService;
-            this.privilegeSyncService = privilegeSyncService;
+            this.roleSyncService = roleSyncService;
             this.messenger = messenger;
         }
 
@@ -74,11 +74,11 @@ namespace FirstStepsTweaks.Commands
         {
             IServerPlayer player = (IServerPlayer)args.Caller.Player;
             linkService.UnlinkPlayer(player.PlayerUID);
-            privilegeSyncService.ClearDonatorPrivileges(player);
+            roleSyncService.ClearDonatorRole(player);
 
             messenger.SendDual(
                 player,
-                "Discord account unlinked and synced donator roles removed.",
+                "Discord account unlinked and synced donator role removed.",
                 (int)EnumChatType.Notification,
                 (int)EnumChatType.CommandSuccess);
 

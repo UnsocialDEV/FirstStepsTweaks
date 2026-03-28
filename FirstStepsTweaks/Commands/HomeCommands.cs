@@ -21,6 +21,7 @@ namespace FirstStepsTweaks.Commands
         private readonly IBackLocationStore backLocationStore;
         private readonly ITeleportWarmupService teleportWarmupService;
         private readonly PlayerHomeLimitResolver homeLimitResolver;
+        private readonly PlayerTeleportWarmupResolver warmupResolver;
         private readonly HomeSlotPolicy homeSlotPolicy;
         private readonly HomeAccessPolicy homeAccessPolicy;
 
@@ -32,6 +33,7 @@ namespace FirstStepsTweaks.Commands
             IBackLocationStore backLocationStore,
             ITeleportWarmupService teleportWarmupService,
             PlayerHomeLimitResolver homeLimitResolver,
+            PlayerTeleportWarmupResolver warmupResolver,
             HomeSlotPolicy homeSlotPolicy,
             HomeAccessPolicy homeAccessPolicy)
         {
@@ -42,6 +44,7 @@ namespace FirstStepsTweaks.Commands
             this.backLocationStore = backLocationStore;
             this.teleportWarmupService = teleportWarmupService;
             this.homeLimitResolver = homeLimitResolver;
+            this.warmupResolver = warmupResolver;
             this.homeSlotPolicy = homeSlotPolicy;
             this.homeAccessPolicy = homeAccessPolicy;
         }
@@ -111,6 +114,7 @@ namespace FirstStepsTweaks.Commands
         private TextCommandResult Home(TextCommandCallingArgs args)
         {
             IServerPlayer player = args.Caller.Player as IServerPlayer;
+            int effectiveWarmupSeconds = warmupResolver.Resolve(player, teleportConfig);
             int maxHomes = homeLimitResolver.Resolve(player, teleportConfig);
             var homes = homeStore.GetAll(player);
             var accessibleHomes = homeAccessPolicy.GetAccessibleHomes(homes, maxHomes);
@@ -142,7 +146,7 @@ namespace FirstStepsTweaks.Commands
                 homeName = requestedHomeName;
             }
 
-            if (teleportConfig.WarmupSeconds > 0 && TeleportBypass.HasBypass(player))
+            if (effectiveWarmupSeconds > 0 && TeleportBypass.HasBypass(player))
             {
                 TeleportBypass.NotifyBypassingCooldown(player, $"/home {homeName} warmup");
                 backLocationStore.RecordCurrentLocation(player);
@@ -154,12 +158,12 @@ namespace FirstStepsTweaks.Commands
             teleportWarmupService.Begin(new TeleportWarmupRequest
             {
                 Player = player,
-                WarmupMessage = $"Teleporting to home '{homeName}' in {teleportConfig.WarmupSeconds} seconds. Do not move.",
+                WarmupMessage = $"Teleporting to home '{homeName}' in {effectiveWarmupSeconds} seconds. Do not move.",
                 CountdownTemplate = $"Teleporting to home '{homeName}' in {{0}}...",
                 CancelMessage = "Teleport cancelled because you moved.",
                 SuccessIngameMessage = $"Teleported to home '{homeName}'.",
                 BypassContext = $"/home {homeName} warmup",
-                WarmupSeconds = teleportConfig.WarmupSeconds,
+                WarmupSeconds = effectiveWarmupSeconds,
                 TickIntervalMs = teleportConfig.TickIntervalMs,
                 CancelMoveThreshold = teleportConfig.CancelMoveThreshold,
                 WarmupInfoChatType = (int)EnumChatType.CommandSuccess,

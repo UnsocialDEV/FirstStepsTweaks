@@ -51,6 +51,7 @@ namespace FirstStepsTweaks
             }
 
             config = new FirstStepsTweaksConfig();
+            config = ApplyConfigUpgrades(api, config);
             api.StoreModConfig(config, ConfigFileName);
             api.Logger.Warning($"[FirstStepsTweaks] Created config file {ConfigFileName}. Review and adjust as needed.");
             return config;
@@ -58,14 +59,27 @@ namespace FirstStepsTweaks
 
         private FirstStepsTweaksConfig ApplyConfigUpgrades(ICoreServerAPI api, FirstStepsTweaksConfig config)
         {
+            bool changed = false;
             var joinConfigUpgrader = new JoinConfigUpgrader();
-            if (!joinConfigUpgrader.TryUpgradeReturningJoinMessage(config))
+            var teleportConfigUpgrader = new TeleportConfigUpgrader();
+
+            if (joinConfigUpgrader.TryUpgradeReturningJoinMessage(config))
+            {
+                changed = true;
+            }
+
+            if (teleportConfigUpgrader.TryUpgradeDonatorWarmupSeconds(config))
+            {
+                changed = true;
+            }
+
+            if (!changed)
             {
                 return config;
             }
 
             api.StoreModConfig(config, ConfigFileName);
-            api.Logger.Notification($"[FirstStepsTweaks] Updated '{ConfigFileName}' join message template to include cumulative playtime.");
+            api.Logger.Notification($"[FirstStepsTweaks] Updated '{ConfigFileName}' config defaults.");
             return config;
         }
 

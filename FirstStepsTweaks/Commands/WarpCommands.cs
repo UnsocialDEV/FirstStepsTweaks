@@ -20,6 +20,7 @@ namespace FirstStepsTweaks.Commands
         private readonly IPlayerMessenger messenger;
         private readonly IBackLocationStore backLocationStore;
         private readonly ITeleportWarmupService teleportWarmupService;
+        private readonly PlayerTeleportWarmupResolver warmupResolver;
 
         public WarpCommands(
             ICoreServerAPI api,
@@ -27,7 +28,8 @@ namespace FirstStepsTweaks.Commands
             WarpStore warpStore,
             IPlayerMessenger messenger,
             IBackLocationStore backLocationStore,
-            ITeleportWarmupService teleportWarmupService)
+            ITeleportWarmupService teleportWarmupService,
+            PlayerTeleportWarmupResolver warmupResolver)
         {
             this.api = api;
             teleportConfig = config?.Teleport ?? new TeleportConfig();
@@ -35,6 +37,7 @@ namespace FirstStepsTweaks.Commands
             this.messenger = messenger;
             this.backLocationStore = backLocationStore;
             this.teleportWarmupService = teleportWarmupService;
+            this.warmupResolver = warmupResolver;
         }
 
         public void Register()
@@ -122,6 +125,7 @@ namespace FirstStepsTweaks.Commands
         private TextCommandResult WarpTo(TextCommandCallingArgs args)
         {
             IServerPlayer player = (IServerPlayer)args.Caller.Player;
+            int effectiveWarmupSeconds = warmupResolver.Resolve(player, teleportConfig);
             string warpName = warpStore.NormalizeWarpName((string)args[0]);
 
             Dictionary<string, double[]> warps = warpStore.LoadWarps();
@@ -135,7 +139,7 @@ namespace FirstStepsTweaks.Commands
             double targetY = target[1];
             double targetZ = target[2];
 
-            if (teleportConfig.WarmupSeconds > 0 && TeleportBypass.HasBypass(player))
+            if (effectiveWarmupSeconds > 0 && TeleportBypass.HasBypass(player))
             {
                 TeleportBypass.NotifyBypassingCooldown(player, $"/warp {warpName} warmup");
                 backLocationStore.RecordCurrentLocation(player);
@@ -147,12 +151,12 @@ namespace FirstStepsTweaks.Commands
             teleportWarmupService.Begin(new TeleportWarmupRequest
             {
                 Player = player,
-                WarmupMessage = $"Teleporting to warp '{warpName}' in {teleportConfig.WarmupSeconds} seconds. Do not move.",
+                WarmupMessage = $"Teleporting to warp '{warpName}' in {effectiveWarmupSeconds} seconds. Do not move.",
                 CountdownTemplate = $"Teleporting to warp '{warpName}' in {{0}}...",
                 CancelMessage = "Teleport cancelled because you moved.",
                 SuccessIngameMessage = $"Teleported to warp '{warpName}'.",
                 BypassContext = $"/warp {warpName} warmup",
-                WarmupSeconds = teleportConfig.WarmupSeconds,
+                WarmupSeconds = effectiveWarmupSeconds,
                 TickIntervalMs = teleportConfig.TickIntervalMs,
                 CancelMoveThreshold = teleportConfig.CancelMoveThreshold,
                 WarmupInfoChatType = (int)EnumChatType.CommandSuccess,

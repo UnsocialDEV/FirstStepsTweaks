@@ -16,6 +16,7 @@ namespace FirstStepsTweaks.Commands
         private readonly IPlayerMessenger messenger;
         private readonly IBackLocationStore backLocationStore;
         private readonly ITeleportWarmupService teleportWarmupService;
+        private readonly PlayerTeleportWarmupResolver warmupResolver;
         private readonly LandClaimEscapeService escapeService;
 
         public StuckCommand(
@@ -24,6 +25,7 @@ namespace FirstStepsTweaks.Commands
             IPlayerMessenger messenger,
             IBackLocationStore backLocationStore,
             ITeleportWarmupService teleportWarmupService,
+            PlayerTeleportWarmupResolver warmupResolver,
             LandClaimEscapeService escapeService)
         {
             this.api = api;
@@ -31,6 +33,7 @@ namespace FirstStepsTweaks.Commands
             this.messenger = messenger;
             this.backLocationStore = backLocationStore;
             this.teleportWarmupService = teleportWarmupService;
+            this.warmupResolver = warmupResolver;
             this.escapeService = escapeService;
         }
 
@@ -47,13 +50,14 @@ namespace FirstStepsTweaks.Commands
         private TextCommandResult Execute(TextCommandCallingArgs args)
         {
             IServerPlayer player = args.Caller.Player as IServerPlayer;
+            int effectiveWarmupSeconds = warmupResolver.Resolve(player, teleportConfig);
             if (!escapeService.TryResolveDestination(player, out Vec3d destination, out string message))
             {
                 messenger.SendDual(player, message, (int)EnumChatType.CommandSuccess, (int)EnumChatType.Notification);
                 return TextCommandResult.Success();
             }
 
-            if (teleportConfig.WarmupSeconds > 0 && TeleportBypass.HasBypass(player))
+            if (effectiveWarmupSeconds > 0 && TeleportBypass.HasBypass(player))
             {
                 TeleportBypass.NotifyBypassingCooldown(player, "/stuck warmup");
                 backLocationStore.RecordCurrentLocation(player);
@@ -65,12 +69,12 @@ namespace FirstStepsTweaks.Commands
             teleportWarmupService.Begin(new TeleportWarmupRequest
             {
                 Player = player,
-                WarmupMessage = $"Teleporting you outside the land claim in {teleportConfig.WarmupSeconds} seconds. Do not move.",
+                WarmupMessage = $"Teleporting you outside the land claim in {effectiveWarmupSeconds} seconds. Do not move.",
                 CountdownTemplate = "Teleporting outside the land claim in {0}...",
                 CancelMessage = "Teleport cancelled because you moved.",
                 SuccessIngameMessage = "Teleported outside the land claim.",
                 BypassContext = "/stuck warmup",
-                WarmupSeconds = teleportConfig.WarmupSeconds,
+                WarmupSeconds = effectiveWarmupSeconds,
                 TickIntervalMs = teleportConfig.TickIntervalMs,
                 CancelMoveThreshold = teleportConfig.CancelMoveThreshold,
                 WarmupInfoChatType = (int)EnumChatType.CommandSuccess,

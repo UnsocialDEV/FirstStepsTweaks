@@ -25,6 +25,7 @@ namespace FirstStepsTweaks.Commands
         private readonly IPlayerMessenger messenger;
         private readonly IBackLocationStore backLocationStore;
         private readonly ITeleportWarmupService teleportWarmupService;
+        private readonly PlayerTeleportWarmupResolver warmupResolver;
         private readonly RtpCooldownStore cooldownStore;
 
         public RtpCommands(
@@ -33,6 +34,7 @@ namespace FirstStepsTweaks.Commands
             IPlayerMessenger messenger,
             IBackLocationStore backLocationStore,
             ITeleportWarmupService teleportWarmupService,
+            PlayerTeleportWarmupResolver warmupResolver,
             RtpCooldownStore cooldownStore)
         {
             this.api = api;
@@ -41,6 +43,7 @@ namespace FirstStepsTweaks.Commands
             this.messenger = messenger;
             this.backLocationStore = backLocationStore;
             this.teleportWarmupService = teleportWarmupService;
+            this.warmupResolver = warmupResolver;
             this.cooldownStore = cooldownStore;
         }
 
@@ -59,6 +62,7 @@ namespace FirstStepsTweaks.Commands
         private TextCommandResult RandomTeleport(TextCommandCallingArgs args)
         {
             var player = (IServerPlayer)args.Caller.Player;
+            int effectiveWarmupSeconds = warmupResolver.Resolve(player, teleportConfig);
             long nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             bool hasBypassCooldown = TeleportBypass.HasBypass(player);
 
@@ -89,13 +93,13 @@ namespace FirstStepsTweaks.Commands
                 return TextCommandResult.Success();
             }
 
-            if (rtpConfig.UseWarmup && teleportConfig.WarmupSeconds > 0 && !hasBypassCooldown)
+            if (rtpConfig.UseWarmup && effectiveWarmupSeconds > 0 && !hasBypassCooldown)
             {
-                StartWarmupTeleport(player, destination);
+                StartWarmupTeleport(player, destination, effectiveWarmupSeconds);
             }
             else
             {
-                if (rtpConfig.UseWarmup && teleportConfig.WarmupSeconds > 0 && hasBypassCooldown)
+                if (rtpConfig.UseWarmup && effectiveWarmupSeconds > 0 && hasBypassCooldown)
                 {
                     TeleportBypass.NotifyBypassingCooldown(player, "/rtp warmup");
                 }
@@ -188,17 +192,17 @@ namespace FirstStepsTweaks.Commands
             return block.BlockId != 0 && block.Replaceable < 6000;
         }
 
-        private void StartWarmupTeleport(IServerPlayer player, Vec3d destination)
+        private void StartWarmupTeleport(IServerPlayer player, Vec3d destination, int warmupSeconds)
         {
             teleportWarmupService.Begin(new TeleportWarmupRequest
             {
                 Player = player,
-                WarmupMessage = $"Teleporting to a random location in {teleportConfig.WarmupSeconds} seconds. Do not move.",
+                WarmupMessage = $"Teleporting to a random location in {warmupSeconds} seconds. Do not move.",
                 CountdownTemplate = "Teleporting in {0}...",
                 CancelMessage = "Teleport cancelled because you moved.",
                 SuccessIngameMessage = "Teleported to a random location.",
                 BypassContext = "/rtp warmup",
-                WarmupSeconds = teleportConfig.WarmupSeconds,
+                WarmupSeconds = warmupSeconds,
                 TickIntervalMs = teleportConfig.TickIntervalMs,
                 CancelMoveThreshold = teleportConfig.CancelMoveThreshold,
                 WarmupInfoChatType = (int)EnumChatType.CommandSuccess,

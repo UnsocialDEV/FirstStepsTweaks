@@ -18,6 +18,7 @@ namespace FirstStepsTweaks.Commands
         private readonly IPlayerMessenger messenger;
         private readonly IBackLocationStore backLocationStore;
         private readonly ITeleportWarmupService teleportWarmupService;
+        private readonly PlayerTeleportWarmupResolver warmupResolver;
 
         public SpawnCommands(
             ICoreServerAPI api,
@@ -25,7 +26,8 @@ namespace FirstStepsTweaks.Commands
             SpawnStore spawnStore,
             IPlayerMessenger messenger,
             IBackLocationStore backLocationStore,
-            ITeleportWarmupService teleportWarmupService)
+            ITeleportWarmupService teleportWarmupService,
+            PlayerTeleportWarmupResolver warmupResolver)
         {
             this.api = api;
             teleportConfig = config?.Teleport ?? new TeleportConfig();
@@ -33,6 +35,7 @@ namespace FirstStepsTweaks.Commands
             this.messenger = messenger;
             this.backLocationStore = backLocationStore;
             this.teleportWarmupService = teleportWarmupService;
+            this.warmupResolver = warmupResolver;
         }
 
         public void Register()
@@ -64,6 +67,7 @@ namespace FirstStepsTweaks.Commands
         private TextCommandResult Spawn(TextCommandCallingArgs args)
         {
             IServerPlayer player = (IServerPlayer)args.Caller.Player;
+            int effectiveWarmupSeconds = warmupResolver.Resolve(player, teleportConfig);
 
             if (!spawnStore.TryGetSpawn(out var target))
             {
@@ -71,7 +75,7 @@ namespace FirstStepsTweaks.Commands
                 return TextCommandResult.Success();
             }
 
-            if (teleportConfig.WarmupSeconds > 0 && TeleportBypass.HasBypass(player))
+            if (effectiveWarmupSeconds > 0 && TeleportBypass.HasBypass(player))
             {
                 TeleportBypass.NotifyBypassingCooldown(player, "/spawn warmup");
                 backLocationStore.RecordCurrentLocation(player);
@@ -83,12 +87,12 @@ namespace FirstStepsTweaks.Commands
             teleportWarmupService.Begin(new TeleportWarmupRequest
             {
                 Player = player,
-                WarmupMessage = $"Teleporting you in {teleportConfig.WarmupSeconds} seconds. Do not move.",
+                WarmupMessage = $"Teleporting you in {effectiveWarmupSeconds} seconds. Do not move.",
                 CountdownTemplate = "Teleporting to spawn in {0}...",
                 CancelMessage = "Teleport cancelled because you moved.",
                 SuccessIngameMessage = "Teleported to spawn.",
                 BypassContext = "/spawn warmup",
-                WarmupSeconds = teleportConfig.WarmupSeconds,
+                WarmupSeconds = effectiveWarmupSeconds,
                 TickIntervalMs = teleportConfig.TickIntervalMs,
                 CancelMoveThreshold = teleportConfig.CancelMoveThreshold,
                 WarmupInfoChatType = (int)EnumChatType.CommandSuccess,

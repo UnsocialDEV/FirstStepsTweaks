@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Collections.Generic;
 using FirstStepsTweaks.Discord.Messaging;
 using FirstStepsTweaks.Discord.Transport;
 using Vintagestory.API.Common;
@@ -18,11 +19,13 @@ namespace FirstStepsTweaks.Discord
     {
         private readonly ICoreServerAPI api;
         private readonly DiscordConfigStore configStore;
-        private readonly DiscordLastMessageStore lastMessageStore;
+        private readonly IDiscordLastMessageStore lastMessageStore;
         private readonly IDiscordMessageTranslator messageTranslator;
         private readonly IDiscordWebhookClient webhookClient;
         private readonly DiscordPlayerAvatarService avatarService;
         private readonly DiscordRelayMessageNormalizer relayMessageNormalizer;
+        private readonly DiscordRelayConfigurationValidator configurationValidator;
+        private const int DiscordMessagePageSize = 100;
         private DiscordBridgeConfig config;
         private readonly SemaphoreSlim pollLock = new SemaphoreSlim(1, 1);
         private string lastMessageId;
@@ -41,9 +44,10 @@ namespace FirstStepsTweaks.Discord
             lastMessageStore = new DiscordLastMessageStore(api);
             messageTranslator = new DiscordMessageTranslator();
             webhookClient = new DiscordWebhookClient();
+            configurationValidator = new DiscordRelayConfigurationValidator();
 
             LoadConfig();
-            if (IsConfigured() && config.RelayGameToDiscord)
+            if (IsConfiguredForGameToDiscordRelay() && config.RelayGameToDiscord)
             {
                 api.Event.PlayerJoin += OnPlayerJoin;
                 api.Event.PlayerDisconnect += OnPlayerDisconnect;
@@ -51,16 +55,39 @@ namespace FirstStepsTweaks.Discord
             }
             RestoreLastMessageId();
 
-            if (IsConfigured() && config.RelayDiscordToGame)
+            if (IsConfiguredForDiscordToGameRelay() && config.RelayDiscordToGame)
             {
                 api.Event.RegisterGameTickListener(OnDiscordPollTick, config.PollMs);
             }
 
-            if (IsConfigured() && config.RelayGameToDiscord && config.RelayWorldUpdates)
+            if (IsConfiguredForGameToDiscordRelay() && config.RelayGameToDiscord && config.RelayWorldUpdates)
             {
                 int pollMs = Math.Max(1000, config.WorldUpdatePollMs);
                 api.Event.RegisterGameTickListener(OnWorldUpdateTick, pollMs);
             }
+        }
+
+        internal DiscordBridge(
+            ICoreServerAPI api,
+            DiscordBridgeConfig config,
+            IDiscordLastMessageStore lastMessageStore,
+            IDiscordMessageTranslator messageTranslator,
+            IDiscordWebhookClient webhookClient,
+            DiscordPlayerAvatarService avatarService,
+            DiscordRelayMessageNormalizer relayMessageNormalizer,
+            DiscordRelayConfigurationValidator configurationValidator)
+        {
+            this.api = api;
+            configStore = null!;
+            this.lastMessageStore = lastMessageStore;
+            this.messageTranslator = messageTranslator;
+            this.webhookClient = webhookClient;
+            this.avatarService = avatarService;
+            this.relayMessageNormalizer = relayMessageNormalizer;
+            this.configurationValidator = configurationValidator;
+            this.config = config;
+
+            RestoreLastMessageId();
         }
 
         // =========================================================
@@ -79,12 +106,14 @@ namespace FirstStepsTweaks.Discord
                 lastMessageId = saved;
         }
 
-        private bool IsConfigured()
+        private bool IsConfiguredForDiscordToGameRelay()
         {
-            return config != null
-                && !string.IsNullOrWhiteSpace(config.BotToken)
-                && !string.IsNullOrWhiteSpace(config.ChannelId)
-                && !string.IsNullOrWhiteSpace(config.WebhookUrl);
+            return configurationValidator.IsReadyForDiscordToGame(config);
+        }
+
+        private bool IsConfiguredForGameToDiscordRelay()
+        {
+            return configurationValidator.IsReadyForGameToDiscord(config);
         }
 
         // =========================================================
@@ -93,7 +122,7 @@ namespace FirstStepsTweaks.Discord
 
         public void OnPlayerChat(IServerPlayer player, int channelId, ref string message, ref string data, BoolRef consumed)
         {
-            if (!IsConfigured()) return;
+            if (!IsConfiguredForGameToDiscordRelay()) return;
             if (!config.RelayGameToDiscord) return;
             if (string.IsNullOrWhiteSpace(message)) return;
 
@@ -122,7 +151,7 @@ namespace FirstStepsTweaks.Discord
 
         private async Task SendPlainToDiscord(string playerUid, string username, string message)
         {
-            if (!IsConfigured()) return;
+            if (!IsConfiguredForGameToDiscordRelay()) return;
 
             string mappedMessage = messageTranslator.ReplaceGameMentionsWithDiscordMentions(message, config.GameMentionMap);
             string avatarUrl = avatarService == null
@@ -153,7 +182,7 @@ namespace FirstStepsTweaks.Discord
 
         private async Task SendEmbedToDiscord(string username, string description, int color)
         {
-            if (!IsConfigured()) return;
+            if (!IsConfiguredForGameToDiscordRelay()) return;
 
             var payload = new
             {
@@ -175,7 +204,7 @@ namespace FirstStepsTweaks.Discord
 
         private void OnPlayerJoin(IServerPlayer player)
         {
-            if (!IsConfigured() || !config.RelayGameToDiscord) return;
+            if (!IsConfiguredForGameToDiscordRelay() || !config.RelayGameToDiscord) return;
             if (!config.RelayJoinLeave) return;
 
             string message = $"🟢 **{player.PlayerName}** joined the server.";
@@ -188,7 +217,7 @@ namespace FirstStepsTweaks.Discord
 
         private void OnPlayerDisconnect(IServerPlayer player)
         {
-            if (!IsConfigured() || !config.RelayGameToDiscord) return;
+            if (!IsConfiguredForGameToDiscordRelay() || !config.RelayGameToDiscord) return;
             if (!config.RelayJoinLeave) return;
 
             string name = player?.PlayerName;
@@ -205,7 +234,7 @@ namespace FirstStepsTweaks.Discord
         }
         private void OnPlayerDeath(IServerPlayer player, DamageSource damageSource)
         {
-            if (!IsConfigured() || !config.RelayGameToDiscord) return;
+            if (!IsConfiguredForGameToDiscordRelay() || !config.RelayGameToDiscord) return;
             if (player == null) return;
 
             string name = player.PlayerName;
@@ -269,7 +298,7 @@ namespace FirstStepsTweaks.Discord
 
         private void CheckWorldUpdatesOnce()
         {
-            if (!IsConfigured() || !config.RelayGameToDiscord || !config.RelayWorldUpdates) return;
+            if (!IsConfiguredForGameToDiscordRelay() || !config.RelayGameToDiscord || !config.RelayWorldUpdates) return;
             if (api.World?.Calendar == null) return;
 
             int dayNumber = (int)Math.Floor(api.World.Calendar.TotalDays);
@@ -476,103 +505,191 @@ namespace FirstStepsTweaks.Discord
         }
         private async Task CheckDiscordMessagesOnce()
         {
-            if (!IsConfigured()) return;
+            if (!IsConfiguredForDiscordToGameRelay()) return;
             if (!config.RelayDiscordToGame) return;
 
             try
             {
-                string url = string.IsNullOrWhiteSpace(lastMessageId)
-                    ? $"https://discord.com/api/v10/channels/{config.ChannelId}/messages?limit=100"
-                    : $"https://discord.com/api/v10/channels/{config.ChannelId}/messages?after={lastMessageId}&limit=100";
+                List<JsonElement> pendingMessages = await LoadPendingDiscordMessagesAsync();
+                if (pendingMessages.Count == 0) return;
 
-                DiscordHttpResponse response = await webhookClient.GetAsync(url, config.BotToken);
-                if (response.StatusCode == 429)
+                foreach (JsonElement msg in pendingMessages.AsEnumerable().Reverse())
                 {
-                    api.Logger.Warning("[FirstStepsTweaks] Discord rate limited.");
-                    return;
+                    RelayDiscordMessageToGame(msg);
                 }
 
-                if (response.StatusCode < 200 || response.StatusCode >= 300)
-                {
-                    throw new InvalidOperationException($"Discord returned status code {response.StatusCode}.");
-                }
-
-                string json = response.Body;
-                if (string.IsNullOrWhiteSpace(json)) return;
-
-                using JsonDocument doc = JsonDocument.Parse(json);
-                JsonElement root = doc.RootElement;
-
-                if (root.ValueKind != JsonValueKind.Array || root.GetArrayLength() == 0)
-                    return;
-
-                // Process oldest → newest so chat order is correct
-                foreach (JsonElement msg in root.EnumerateArray().Reverse())
-                {
-                    if (!msg.TryGetProperty("id", out var idProp))
-                        continue;
-
-                    string id = idProp.GetString();
-                    if (string.IsNullOrWhiteSpace(id))
-                        continue;
-
-                    // Ignore bot messages
-                    if (msg.TryGetProperty("author", out var author) &&
-                        author.TryGetProperty("bot", out var botProp) &&
-                        botProp.ValueKind == JsonValueKind.True)
-                    {
-                        lastMessageId = id;
-                        continue;
-                    }
-
-                    string content = msg.TryGetProperty("content", out var contentProp)
-                        ? contentProp.GetString()
-                        : "";
-
-                    content = SanitizeDiscordContentForGame(msg, content);
-
-                    if (config.IgnoreEmptyDiscordMessages && string.IsNullOrWhiteSpace(content))
-                    {
-                        lastMessageId = id;
-                        continue;
-                    }
-
-                    foreach (var prefix in config.IgnoreDiscordPrefixes)
-                    {
-                        if (!string.IsNullOrWhiteSpace(prefix) && content.StartsWith(prefix))
-                        {
-                            lastMessageId = id;
-                            continue;
-                        }
-                    }
-
-                    string username = "Discord";
-                    if (msg.TryGetProperty("author", out var authorObj) &&
-                        authorObj.TryGetProperty("username", out var userProp))
-                    {
-                        username = userProp.GetString() ?? "Discord";
-                    }
-
-                    string prefixLabel = string.IsNullOrWhiteSpace(config.DiscordPrefix)
-                        ? "[Discord]"
-                        : config.DiscordPrefix;
-
-                    api.SendMessageToGroup(
-                        GlobalConstants.GeneralChatGroup,
-                        $"{prefixLabel} {username}: {content}",
-                        EnumChatType.AllGroups
-                    );
-
-                    lastMessageId = id;
-                }
-
-                // Save last processed message ID once
                 lastMessageStore.Save(lastMessageId);
             }
             catch (Exception e)
             {
                 api.Logger.Error($"[FirstStepsTweaks] Discord polling exception: {e.Message}");
             }
+        }
+
+        private async Task<List<JsonElement>> LoadPendingDiscordMessagesAsync()
+        {
+            var pendingMessages = new List<JsonElement>();
+
+            if (string.IsNullOrWhiteSpace(lastMessageId))
+            {
+                pendingMessages.AddRange(await LoadDiscordMessagePageAsync(null));
+                return pendingMessages;
+            }
+
+            string beforeMessageId = null;
+            bool reachedLastProcessedMessage = false;
+
+            while (true)
+            {
+                JsonElement[] page = await LoadDiscordMessagePageAsync(beforeMessageId);
+                if (page.Length == 0)
+                {
+                    break;
+                }
+
+                foreach (JsonElement message in page)
+                {
+                    if (IsLastProcessedMessage(message))
+                    {
+                        reachedLastProcessedMessage = true;
+                        break;
+                    }
+
+                    pendingMessages.Add(message);
+                }
+
+                if (reachedLastProcessedMessage || page.Length < DiscordMessagePageSize)
+                {
+                    break;
+                }
+
+                string oldestMessageId = TryGetMessageId(page[^1]);
+                if (string.IsNullOrWhiteSpace(oldestMessageId))
+                {
+                    break;
+                }
+
+                beforeMessageId = oldestMessageId;
+            }
+
+            return pendingMessages;
+        }
+
+        private async Task<JsonElement[]> LoadDiscordMessagePageAsync(string beforeMessageId)
+        {
+            string url = BuildDiscordMessagesUrl(beforeMessageId);
+
+            DiscordHttpResponse response = await webhookClient.GetAsync(url, config.BotToken);
+            if (response.StatusCode == 429)
+            {
+                api.Logger.Warning("[FirstStepsTweaks] Discord rate limited.");
+                return Array.Empty<JsonElement>();
+            }
+
+            if (response.StatusCode < 200 || response.StatusCode >= 300)
+            {
+                throw new InvalidOperationException($"Discord returned status code {response.StatusCode}.");
+            }
+
+            string json = response.Body;
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                return Array.Empty<JsonElement>();
+            }
+
+            using JsonDocument doc = JsonDocument.Parse(json);
+            JsonElement root = doc.RootElement;
+
+            if (root.ValueKind != JsonValueKind.Array || root.GetArrayLength() == 0)
+            {
+                return Array.Empty<JsonElement>();
+            }
+
+            return root.EnumerateArray()
+                .Select(message => message.Clone())
+                .ToArray();
+        }
+
+        private string BuildDiscordMessagesUrl(string beforeMessageId)
+        {
+            if (string.IsNullOrWhiteSpace(beforeMessageId))
+            {
+                return $"https://discord.com/api/v10/channels/{config.ChannelId}/messages?limit={DiscordMessagePageSize}";
+            }
+
+            return $"https://discord.com/api/v10/channels/{config.ChannelId}/messages?before={beforeMessageId}&limit={DiscordMessagePageSize}";
+        }
+
+        private bool IsLastProcessedMessage(JsonElement message)
+        {
+            return string.Equals(TryGetMessageId(message), lastMessageId, StringComparison.Ordinal);
+        }
+
+        private string TryGetMessageId(JsonElement message)
+        {
+            if (!message.TryGetProperty("id", out JsonElement idProp))
+            {
+                return null;
+            }
+
+            return idProp.GetString();
+        }
+
+        private void RelayDiscordMessageToGame(JsonElement msg)
+        {
+            string id = TryGetMessageId(msg);
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                return;
+            }
+
+            if (msg.TryGetProperty("author", out JsonElement author) &&
+                author.TryGetProperty("bot", out JsonElement botProp) &&
+                botProp.ValueKind == JsonValueKind.True)
+            {
+                lastMessageId = id;
+                return;
+            }
+
+            string content = msg.TryGetProperty("content", out JsonElement contentProp)
+                ? contentProp.GetString()
+                : "";
+
+            content = SanitizeDiscordContentForGame(msg, content);
+
+            if (config.IgnoreEmptyDiscordMessages && string.IsNullOrWhiteSpace(content))
+            {
+                lastMessageId = id;
+                return;
+            }
+
+            foreach (string prefix in config.IgnoreDiscordPrefixes)
+            {
+                if (!string.IsNullOrWhiteSpace(prefix) && content.StartsWith(prefix))
+                {
+                    lastMessageId = id;
+                    return;
+                }
+            }
+
+            string username = "Discord";
+            if (msg.TryGetProperty("author", out JsonElement authorObj) &&
+                authorObj.TryGetProperty("username", out JsonElement userProp))
+            {
+                username = userProp.GetString() ?? "Discord";
+            }
+
+            string prefixLabel = string.IsNullOrWhiteSpace(config.DiscordPrefix)
+                ? "[Discord]"
+                : config.DiscordPrefix;
+
+            api.SendMessageToGroup(
+                GlobalConstants.GeneralChatGroup,
+                $"{prefixLabel} {username}: {content}",
+                EnumChatType.AllGroups
+            );
+
+            lastMessageId = id;
         }
 
         private string SanitizeDiscordContentForGame(JsonElement msg, string content)

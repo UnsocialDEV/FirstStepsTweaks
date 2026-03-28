@@ -7,7 +7,7 @@ using FirstStepsTweaks.Discord.Transport;
 
 namespace FirstStepsTweaks.Discord
 {
-    public sealed class DiscordMemberRoleClient
+    public sealed class DiscordMemberRoleClient : IDiscordMemberRoleClient
     {
         private const int MaxAttempts = 2;
         private readonly IDiscordWebhookClient webhookClient;

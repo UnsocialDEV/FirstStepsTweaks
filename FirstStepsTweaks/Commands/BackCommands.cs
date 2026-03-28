@@ -17,19 +17,22 @@ namespace FirstStepsTweaks.Commands
         private readonly IPlayerMessenger messenger;
         private readonly IBackLocationStore backLocationStore;
         private readonly ITeleportWarmupService teleportWarmupService;
+        private readonly PlayerTeleportWarmupResolver warmupResolver;
 
         public BackCommands(
             ICoreServerAPI api,
             FirstStepsTweaksConfig config,
             IPlayerMessenger messenger,
             IBackLocationStore backLocationStore,
-            ITeleportWarmupService teleportWarmupService)
+            ITeleportWarmupService teleportWarmupService,
+            PlayerTeleportWarmupResolver warmupResolver)
         {
             this.api = api;
             teleportConfig = config?.Teleport ?? new TeleportConfig();
             this.messenger = messenger;
             this.backLocationStore = backLocationStore;
             this.teleportWarmupService = teleportWarmupService;
+            this.warmupResolver = warmupResolver;
         }
 
         public void Register()
@@ -61,6 +64,7 @@ namespace FirstStepsTweaks.Commands
         private TextCommandResult Back(TextCommandCallingArgs args)
         {
             IServerPlayer player = (IServerPlayer)args.Caller.Player;
+            int effectiveWarmupSeconds = warmupResolver.Resolve(player, teleportConfig);
 
             if (!backLocationStore.TryGet(player.PlayerUID, out Vec3d lastLocation))
             {
@@ -69,7 +73,7 @@ namespace FirstStepsTweaks.Commands
                 return TextCommandResult.Success();
             }
 
-            if (teleportConfig.WarmupSeconds > 0 && TeleportBypass.HasBypass(player))
+            if (effectiveWarmupSeconds > 0 && TeleportBypass.HasBypass(player))
             {
                 TeleportBypass.NotifyBypassingCooldown(player, "/back warmup");
 
@@ -84,12 +88,12 @@ namespace FirstStepsTweaks.Commands
             teleportWarmupService.Begin(new TeleportWarmupRequest
             {
                 Player = player,
-                WarmupMessage = $"Teleporting to your previous location in {teleportConfig.WarmupSeconds} seconds. Do not move.",
+                WarmupMessage = $"Teleporting to your previous location in {effectiveWarmupSeconds} seconds. Do not move.",
                 CountdownTemplate = "Teleporting to your last location in {0}...",
                 CancelMessage = "Teleport cancelled because you moved.",
                 SuccessIngameMessage = "Teleported to your last location.",
                 BypassContext = "/back warmup",
-                WarmupSeconds = teleportConfig.WarmupSeconds,
+                WarmupSeconds = effectiveWarmupSeconds,
                 TickIntervalMs = teleportConfig.TickIntervalMs,
                 CancelMoveThreshold = teleportConfig.CancelMoveThreshold,
                 WarmupInfoChatType = (int)EnumChatType.CommandSuccess,
