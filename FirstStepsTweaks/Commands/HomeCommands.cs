@@ -24,6 +24,7 @@ namespace FirstStepsTweaks.Commands
         private readonly PlayerTeleportWarmupResolver warmupResolver;
         private readonly HomeSlotPolicy homeSlotPolicy;
         private readonly HomeAccessPolicy homeAccessPolicy;
+        private readonly HomeDeletionTargetResolver homeDeletionTargetResolver;
 
         public HomeCommands(
             ICoreServerAPI api,
@@ -35,7 +36,8 @@ namespace FirstStepsTweaks.Commands
             PlayerHomeLimitResolver homeLimitResolver,
             PlayerTeleportWarmupResolver warmupResolver,
             HomeSlotPolicy homeSlotPolicy,
-            HomeAccessPolicy homeAccessPolicy)
+            HomeAccessPolicy homeAccessPolicy,
+            HomeDeletionTargetResolver homeDeletionTargetResolver)
         {
             this.api = api;
             teleportConfig = config?.Teleport ?? new TeleportConfig();
@@ -47,6 +49,7 @@ namespace FirstStepsTweaks.Commands
             this.warmupResolver = warmupResolver;
             this.homeSlotPolicy = homeSlotPolicy;
             this.homeAccessPolicy = homeAccessPolicy;
+            this.homeDeletionTargetResolver = homeDeletionTargetResolver;
         }
 
         public void Register()
@@ -69,10 +72,10 @@ namespace FirstStepsTweaks.Commands
 
             api.ChatCommands
                 .Create("delhome")
-                .WithDescription("Delete a named home")
+                .WithDescription("Delete a named home, or your only home when no name is supplied")
                 .RequiresPlayer()
                 .RequiresPrivilege(Privilege.chat)
-                .WithArgs(api.ChatCommands.Parsers.Word("name"))
+                .WithArgs(api.ChatCommands.Parsers.OptionalWord("name"))
                 .HandleWith(DelHome);
 
             api.ChatCommands
@@ -184,13 +187,15 @@ namespace FirstStepsTweaks.Commands
         private TextCommandResult DelHome(TextCommandCallingArgs args)
         {
             IServerPlayer player = args.Caller.Player as IServerPlayer;
-            string homeName = homeStore.NormalizeHomeName((string)args[0]);
-
-            if (string.IsNullOrWhiteSpace(homeName))
+            var homes = homeStore.GetAll(player);
+            var resolution = homeDeletionTargetResolver.Resolve(homes, args[0] as string);
+            if (!resolution.Success)
             {
-                messenger.SendDual(player, "Home name cannot be empty.", (int)EnumChatType.CommandSuccess, (int)EnumChatType.Notification);
+                messenger.SendDual(player, resolution.ErrorMessage, (int)EnumChatType.CommandSuccess, (int)EnumChatType.Notification);
                 return TextCommandResult.Success();
             }
+
+            string homeName = resolution.HomeName;
 
             if (!homeStore.Remove(player, homeName))
             {

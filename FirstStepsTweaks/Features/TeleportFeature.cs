@@ -28,9 +28,10 @@ namespace FirstStepsTweaks.Features
             var warmupResolver = new PlayerTeleportWarmupResolver();
             var homeSlotPolicy = new HomeSlotPolicy();
             var homeAccessPolicy = new HomeAccessPolicy();
+            var homeDeletionTargetResolver = new HomeDeletionTargetResolver();
 
             backCommands = new BackCommands(api, config, runtime.Messenger, runtime.BackLocationStore, runtime.TeleportWarmupService, warmupResolver);
-            homeCommands = new HomeCommands(api, config, homeStore, runtime.Messenger, runtime.BackLocationStore, runtime.TeleportWarmupService, homeLimitResolver, warmupResolver, homeSlotPolicy, homeAccessPolicy);
+            homeCommands = new HomeCommands(api, config, homeStore, runtime.Messenger, runtime.BackLocationStore, runtime.TeleportWarmupService, homeLimitResolver, warmupResolver, homeSlotPolicy, homeAccessPolicy, homeDeletionTargetResolver);
             spawnCommands = new SpawnCommands(api, config, new SpawnStore(api), runtime.Messenger, runtime.BackLocationStore, runtime.TeleportWarmupService, warmupResolver);
             stuckCommand = new StuckCommand(
                 api,
