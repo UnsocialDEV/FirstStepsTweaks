@@ -12,9 +12,8 @@
     <VintagestoryApiPath Condition="'$(VintagestoryApiPath)' == '' and Exists('$(MSBuildProjectDirectory)/lib/VintagestoryAPI.dll')">$(MSBuildProjectDirectory)/lib/VintagestoryAPI.dll</VintagestoryApiPath>
     <VintagestoryApiPath Condition="'$(VintagestoryApiPath)' == '' and Exists('C:\Users\daytonwatson\Desktop\VintagestoryAPI.dll')">C:\Users\daytonwatson\Desktop\VintagestoryAPI.dll</VintagestoryApiPath>
 
-    <!-- Package ZIP by default on Windows only; non-Windows can opt in via -p:EnableModZipPackaging=true. -->
-    <EnableModZipPackaging Condition="'$(EnableModZipPackaging)' == '' and $([MSBuild]::IsOSPlatform('Windows'))">true</EnableModZipPackaging>
-    <EnableModZipPackaging Condition="'$(EnableModZipPackaging)' == '' and !$([MSBuild]::IsOSPlatform('Windows'))">false</EnableModZipPackaging>
+    <!-- Packaging is explicit so build and publish behave the same on every host OS. -->
+    <EnableModZipPackaging Condition="'$(EnableModZipPackaging)' == ''">false</EnableModZipPackaging>
 
     <ModsFolder Condition="'$(ModsFolder)' == '' and $([MSBuild]::IsOSPlatform('Windows'))">$(APPDATA)/VSserverData/Mods</ModsFolder>
     <ModsFolder Condition="'$(ModsFolder)' == '' and !$([MSBuild]::IsOSPlatform('Windows'))">$(HOME)/.config/VSserverData/Mods</ModsFolder>
@@ -49,12 +48,12 @@
       Text="VintagestoryAPI.dll not found. Set -p:VintagestoryApiPath=... or VINTAGESTORY_API_PATH to the API DLL location." />
   </Target>
 
-  <Target Name="PostBuild" AfterTargets="Build" Condition="'$(EnableModZipPackaging)' == 'true'">
+  <Target Name="PackagePublishedModZip" AfterTargets="Publish" Condition="'$(EnableModZipPackaging)' == 'true'">
     <Exec
       Condition="$([MSBuild]::IsOSPlatform('Windows'))"
-      Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)/scripts/CreateModZip.ps1&quot; -ProjectDir &quot;$(MSBuildProjectDirectory)&quot; -TargetPath &quot;$(TargetPath)&quot; -ModName &quot;FirstStepsTweaks&quot; -ModsFolder &quot;$(ModsFolder)&quot;" />
+      Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)/scripts/CreateModZip.ps1&quot; -ProjectDir &quot;$(MSBuildProjectDirectory)&quot; -TargetPath &quot;$(PublishDir)$(TargetFileName)&quot; -ModName &quot;FirstStepsTweaks&quot; -ModsFolder &quot;$(ModsFolder)&quot;" />
     <Exec
       Condition="!$([MSBuild]::IsOSPlatform('Windows'))"
-      Command="pwsh -NoProfile -File &quot;$(MSBuildProjectDirectory)/scripts/CreateModZip.ps1&quot; -ProjectDir &quot;$(MSBuildProjectDirectory)&quot; -TargetPath &quot;$(TargetPath)&quot; -ModName &quot;FirstStepsTweaks&quot; -ModsFolder &quot;$(ModsFolder)&quot;" />
+      Command="pwsh -NoProfile -File &quot;$(MSBuildProjectDirectory)/scripts/CreateModZip.ps1&quot; -ProjectDir &quot;$(MSBuildProjectDirectory)&quot; -TargetPath &quot;$(PublishDir)$(TargetFileName)&quot; -ModName &quot;FirstStepsTweaks&quot; -ModsFolder &quot;$(ModsFolder)&quot;" />
   </Target>
 </Project>

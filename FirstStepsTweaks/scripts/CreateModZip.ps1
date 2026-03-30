@@ -14,6 +14,10 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+$ProjectDir = [System.IO.Path]::GetFullPath($ProjectDir)
+$TargetPath = [System.IO.Path]::GetFullPath($TargetPath)
+$ModsFolder = [System.IO.Path]::GetFullPath($ModsFolder)
+
 if (-not (Test-Path -LiteralPath $TargetPath)) {
     throw "TargetPath not found: $TargetPath"
 }
@@ -23,12 +27,9 @@ if (-not (Test-Path -LiteralPath $targetDir)) {
     throw "Build output directory not found: $targetDir"
 }
 
-$stagingRoot = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath ("{0}-staging" -f $ModName)
-if (Test-Path -LiteralPath $stagingRoot) {
-    Remove-Item -LiteralPath $stagingRoot -Recurse -Force
-}
-
-New-Item -ItemType Directory -Path $stagingRoot | Out-Null
+$packageRunId = [System.Guid]::NewGuid().ToString('N')
+$stagingRoot = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath ("{0}-staging-{1}" -f $ModName, $packageRunId)
+New-Item -ItemType Directory -Path $stagingRoot -Force | Out-Null
 
 # Copy output files except external API references that should not be bundled.
 Get-ChildItem -LiteralPath $targetDir -File | ForEach-Object {
@@ -58,6 +59,8 @@ else {
 }
 
 if ($assetsSourcePath -and (Test-Path -LiteralPath $assetsSourcePath)) {
+    $assetsSourcePath = [System.IO.Path]::GetFullPath($assetsSourcePath)
+
     Get-ChildItem -LiteralPath $assetsSourcePath -File -Recurse | ForEach-Object {
         $relativePath = ($_.FullName.Substring($assetsSourcePath.Length) -replace '^[\\/]+', '')
         if ($relativePath.StartsWith("assets/", [System.StringComparison]::OrdinalIgnoreCase) -or $relativePath.StartsWith("assets\\", [System.StringComparison]::OrdinalIgnoreCase)) {
@@ -86,15 +89,13 @@ if (-not (Test-Path -LiteralPath $ModsFolder)) {
 }
 
 $zipPath = Join-Path -Path $ModsFolder -ChildPath ("{0}.zip" -f $ModName)
-if (Test-Path -LiteralPath $zipPath) {
-    Remove-Item -LiteralPath $zipPath -Force
-}
+$tempZipPath = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath ("{0}-{1}.zip" -f $ModName, $packageRunId)
 
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
 $stagingRootFullPath = [System.IO.Path]::GetFullPath($stagingRoot)
-$zipArchive = [System.IO.Compression.ZipFile]::Open($zipPath, [System.IO.Compression.ZipArchiveMode]::Create)
+$zipArchive = [System.IO.Compression.ZipFile]::Open($tempZipPath, [System.IO.Compression.ZipArchiveMode]::Create)
 try {
     Get-ChildItem -LiteralPath $stagingRootFullPath -File -Recurse | ForEach-Object {
         $relativePath = $_.FullName.Substring($stagingRootFullPath.Length).TrimStart('\', '/')
@@ -110,6 +111,12 @@ try {
 }
 finally {
     $zipArchive.Dispose()
+}
+
+Move-Item -LiteralPath $tempZipPath -Destination $zipPath -Force
+
+if (Test-Path -LiteralPath $stagingRoot) {
+    Remove-Item -LiteralPath $stagingRoot -Recurse -Force
 }
 
 Write-Host "Created mod zip: $zipPath"

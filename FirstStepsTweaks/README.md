@@ -21,7 +21,7 @@ FirstStepsTweaks is a server-side Vintage Story mod that groups together a set o
 - .NET 8
 - Vintage Story server mod API
 - xUnit for unit tests
-- PowerShell packaging script for build output zip generation
+- PowerShell packaging script for publish output zip generation
 
 ## Runtime overview
 
@@ -352,7 +352,7 @@ dotnet test .\Tests\FirstStepsTweaks.Tests\FirstStepsTweaks.Tests.csproj -p:Vint
 
 ### Packaging
 
-On Windows, a successful build packages the mod automatically by running [`scripts/CreateModZip.ps1`](./scripts/CreateModZip.ps1).
+Packaging is opt-in and runs after `dotnet publish` by calling [`scripts/CreateModZip.ps1`](./scripts/CreateModZip.ps1).
 
 Default output location:
 
@@ -363,12 +363,15 @@ Default output location:
 Useful overrides:
 
 ```powershell
-dotnet build .\FirstStepsTweaks.csproj `
+dotnet publish .\FirstStepsTweaks.csproj `
+  -c Release `
+  -r linux-x64 `
   -p:VintagestoryApiPath="C:\path\to\VintagestoryAPI.dll" `
+  -p:EnableModZipPackaging=true `
   -p:ModsFolder="C:\path\to\VSserverData\Mods"
 ```
 
-Disable zip packaging:
+Build without packaging:
 
 ```powershell
 dotnet build .\FirstStepsTweaks.csproj `
@@ -376,7 +379,7 @@ dotnet build .\FirstStepsTweaks.csproj `
   -p:EnableModZipPackaging=false
 ```
 
-On non-Windows platforms, packaging is off by default and can be enabled with `-p:EnableModZipPackaging=true`.
+On non-Windows platforms, packaging requires `pwsh` to be available when `-p:EnableModZipPackaging=true` is used.
 
 ## Tests
 
