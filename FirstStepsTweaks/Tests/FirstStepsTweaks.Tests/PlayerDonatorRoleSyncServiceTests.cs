@@ -11,7 +11,7 @@ namespace FirstStepsTweaks.Tests;
 public sealed class PlayerDonatorRoleSyncServiceTests
 {
     [Fact]
-    public async Task SyncAsync_WhenDiscordHasMultipleMatchingRoles_AssignsHighestRole()
+    public async Task SyncAsync_WhenDiscordHasMultipleMatchingRoles_GrantsHighestPrivilege()
     {
         var linkedStore = new FakeLinkedAccountStore();
         linkedStore.SetLinkedDiscordUserId("player-1", "discord-1");
@@ -23,14 +23,14 @@ public sealed class PlayerDonatorRoleSyncServiceTests
                 new DiscordGuildRole("1", "supporter"),
                 new DiscordGuildRole("2", "founder")
             }));
-        var roleAssigner = new FakePlayerRoleAssigner();
-        var resetter = new FakePlayerDefaultRoleResetter("default");
+        var privilegeMutator = new FakePlayerPrivilegeMutator();
         var messenger = new FakePlayerMessenger();
-        var service = CreateService(linkedStore, memberRoleClient, new FakePlayerRoleCodeReader("default"), roleAssigner, resetter, messenger);
+        var service = CreateService(linkedStore, memberRoleClient, privilegeMutator, messenger);
 
         await service.SyncAsync(CreatePlayer("player-1", "Ava"));
 
-        Assert.Equal("founder", roleAssigner.LastAssignedRoleCode);
+        Assert.Contains("firststepstweaks.founder", privilegeMutator.GrantedPrivileges);
+        Assert.Contains("firststepstweaks.back", privilegeMutator.GrantedPrivileges);
         Assert.Equal(1, messenger.InfoCount);
         Assert.Equal("Discord donator role synced.", messenger.LastInfoMessage);
     }
@@ -44,80 +44,146 @@ public sealed class PlayerDonatorRoleSyncServiceTests
         var memberRoleClient = new FakeDiscordMemberRoleClient(new DiscordMemberRoles(
             new[] { "1" },
             new[] { new DiscordGuildRole("1", "FoUnDeR") }));
-        var roleAssigner = new FakePlayerRoleAssigner();
-        var service = CreateService(linkedStore, memberRoleClient, new FakePlayerRoleCodeReader("default"), roleAssigner, new FakePlayerDefaultRoleResetter("default"), new FakePlayerMessenger());
+        var privilegeMutator = new FakePlayerPrivilegeMutator();
+        var service = CreateService(linkedStore, memberRoleClient, privilegeMutator, new FakePlayerMessenger());
 
         await service.SyncAsync(CreatePlayer("player-1", "Ava"));
 
-        Assert.Equal("founder", roleAssigner.LastAssignedRoleCode);
+        Assert.Contains("firststepstweaks.founder", privilegeMutator.GrantedPrivileges);
+        Assert.Contains("firststepstweaks.back", privilegeMutator.GrantedPrivileges);
     }
 
     [Fact]
     public async Task SyncAsync_WhenPlayerIsNotLinked_DoesNothing()
     {
-        var roleAssigner = new FakePlayerRoleAssigner();
-        var resetter = new FakePlayerDefaultRoleResetter("default");
+        var privilegeMutator = new FakePlayerPrivilegeMutator();
         var messenger = new FakePlayerMessenger();
-        var service = CreateService(new FakeLinkedAccountStore(), new FakeDiscordMemberRoleClient(EmptyRoles), new FakePlayerRoleCodeReader("supporter"), roleAssigner, resetter, messenger);
+        var service = CreateService(new FakeLinkedAccountStore(), new FakeDiscordMemberRoleClient(EmptyRoles), privilegeMutator, messenger);
 
         await service.SyncAsync(CreatePlayer("player-1", "Ava"));
 
-        Assert.Null(roleAssigner.LastAssignedRoleCode);
-        Assert.Equal(0, resetter.ResetCount);
+        Assert.Empty(privilegeMutator.GrantedPrivileges);
+        Assert.Empty(privilegeMutator.RevokedPrivileges);
         Assert.Equal(0, messenger.InfoCount);
     }
 
     [Fact]
-    public async Task SyncAsync_WhenDiscordHasNoMatchingRole_ResetsPlayerToDefaultRole()
+    public async Task SyncAsync_WhenDiscordHasNoMatchingRole_RevokesExistingDonatorPrivileges()
     {
         var linkedStore = new FakeLinkedAccountStore();
         linkedStore.SetLinkedDiscordUserId("player-1", "discord-1");
 
-        var resetter = new FakePlayerDefaultRoleResetter("default");
+        var privilegeMutator = new FakePlayerPrivilegeMutator();
         var messenger = new FakePlayerMessenger();
-        var service = CreateService(linkedStore, new FakeDiscordMemberRoleClient(EmptyRoles), new FakePlayerRoleCodeReader("supporter"), new FakePlayerRoleAssigner(), resetter, messenger);
+        var service = CreateService(linkedStore, new FakeDiscordMemberRoleClient(EmptyRoles), privilegeMutator, messenger);
 
-        await service.SyncAsync(CreatePlayer("player-1", "Ava"));
+        await service.SyncAsync(CreatePlayer("player-1", "Ava", "firststepstweaks.supporter"));
 
-        Assert.Equal(1, resetter.ResetCount);
+        Assert.Contains("firststepstweaks.supporter", privilegeMutator.RevokedPrivileges);
         Assert.Equal(1, messenger.InfoCount);
     }
 
     [Fact]
-    public void ClearDonatorRole_ResetsPlayerToDefaultRole()
-    {
-        var resetter = new FakePlayerDefaultRoleResetter("default");
-        var service = CreateService(new FakeLinkedAccountStore(), new FakeDiscordMemberRoleClient(EmptyRoles), new FakePlayerRoleCodeReader("founder"), new FakePlayerRoleAssigner(), resetter, new FakePlayerMessenger());
-
-        service.ClearDonatorRole(CreatePlayer("player-1", "Ava"));
-
-        Assert.Equal(1, resetter.ResetCount);
-    }
-
-    [Fact]
-    public async Task SyncAsync_WhenRoleDoesNotChange_DoesNotSendNotification()
+    public async Task SyncAsync_WhenTierIsPatron_GrantsBackPrivilege()
     {
         var linkedStore = new FakeLinkedAccountStore();
         linkedStore.SetLinkedDiscordUserId("player-1", "discord-1");
 
-        var roleAssigner = new FakePlayerRoleAssigner();
-        var resetter = new FakePlayerDefaultRoleResetter("default");
+        var privilegeMutator = new FakePlayerPrivilegeMutator();
+        var service = CreateService(
+            linkedStore,
+            new FakeDiscordMemberRoleClient(new DiscordMemberRoles(
+                new[] { "1" },
+                new[] { new DiscordGuildRole("1", "patron") })),
+            privilegeMutator,
+            new FakePlayerMessenger());
+
+        await service.SyncAsync(CreatePlayer("player-1", "Ava"));
+
+        Assert.Contains("firststepstweaks.patron", privilegeMutator.GrantedPrivileges);
+        Assert.Contains("firststepstweaks.back", privilegeMutator.GrantedPrivileges);
+    }
+
+    [Fact]
+    public void ClearDonatorRole_RevokesAllDonatorPrivilegesWithoutTouchingBaseRole()
+    {
+        var privilegeMutator = new FakePlayerPrivilegeMutator();
+        var service = CreateService(new FakeLinkedAccountStore(), new FakeDiscordMemberRoleClient(EmptyRoles), privilegeMutator, new FakePlayerMessenger());
+
+        service.ClearDonatorRole(CreatePlayer("player-1", "Ava", "firststepstweaks.founder", "firststepstweaks.supporter", "firststepstweaks.back"));
+
+        Assert.Contains("firststepstweaks.founder", privilegeMutator.RevokedPrivileges);
+        Assert.Contains("firststepstweaks.supporter", privilegeMutator.RevokedPrivileges);
+        Assert.Contains("firststepstweaks.back", privilegeMutator.RevokedPrivileges);
+    }
+
+    [Fact]
+    public async Task SyncAsync_WhenPrivilegeDoesNotChange_DoesNotSendNotification()
+    {
+        var linkedStore = new FakeLinkedAccountStore();
+        linkedStore.SetLinkedDiscordUserId("player-1", "discord-1");
+
+        var privilegeMutator = new FakePlayerPrivilegeMutator();
         var messenger = new FakePlayerMessenger();
         var service = CreateService(
             linkedStore,
             new FakeDiscordMemberRoleClient(new DiscordMemberRoles(
                 new[] { "1" },
                 new[] { new DiscordGuildRole("1", "supporter") })),
-            new FakePlayerRoleCodeReader("supporter"),
-            roleAssigner,
-            resetter,
+            privilegeMutator,
             messenger);
 
-        await service.SyncAsync(CreatePlayer("player-1", "Ava"));
+        await service.SyncAsync(CreatePlayer("player-1", "Ava", "firststepstweaks.supporter"));
 
-        Assert.Null(roleAssigner.LastAssignedRoleCode);
-        Assert.Equal(0, resetter.ResetCount);
+        Assert.Empty(privilegeMutator.GrantedPrivileges);
+        Assert.Empty(privilegeMutator.RevokedPrivileges);
         Assert.Equal(0, messenger.InfoCount);
+    }
+
+    [Fact]
+    public async Task SyncAsync_WhenHigherTierMatches_RevokesLowerTierAndGrantsHigherTier()
+    {
+        var linkedStore = new FakeLinkedAccountStore();
+        linkedStore.SetLinkedDiscordUserId("player-1", "discord-1");
+
+        var privilegeMutator = new FakePlayerPrivilegeMutator();
+        var messenger = new FakePlayerMessenger();
+        var service = CreateService(
+            linkedStore,
+            new FakeDiscordMemberRoleClient(new DiscordMemberRoles(
+                new[] { "1" },
+                new[] { new DiscordGuildRole("1", "founder") })),
+            privilegeMutator,
+            messenger);
+
+        await service.SyncAsync(CreatePlayer("player-1", "Ava", "firststepstweaks.supporter"));
+
+        Assert.Contains("firststepstweaks.supporter", privilegeMutator.RevokedPrivileges);
+        Assert.Contains("firststepstweaks.founder", privilegeMutator.GrantedPrivileges);
+        Assert.Contains("firststepstweaks.back", privilegeMutator.GrantedPrivileges);
+        Assert.Equal(1, messenger.InfoCount);
+    }
+
+    [Fact]
+    public async Task SyncAsync_WhenTierDropsBelowPatron_RevokesBackPrivilege()
+    {
+        var linkedStore = new FakeLinkedAccountStore();
+        linkedStore.SetLinkedDiscordUserId("player-1", "discord-1");
+
+        var privilegeMutator = new FakePlayerPrivilegeMutator();
+        var service = CreateService(
+            linkedStore,
+            new FakeDiscordMemberRoleClient(new DiscordMemberRoles(
+                new[] { "1" },
+                new[] { new DiscordGuildRole("1", "supporter") })),
+            privilegeMutator,
+            new FakePlayerMessenger());
+
+        await service.SyncAsync(CreatePlayer("player-1", "Ava", "firststepstweaks.patron", "firststepstweaks.back"));
+
+        Assert.Contains("firststepstweaks.patron", privilegeMutator.RevokedPrivileges);
+        Assert.Contains("firststepstweaks.back", privilegeMutator.RevokedPrivileges);
+        Assert.Contains("firststepstweaks.supporter", privilegeMutator.GrantedPrivileges);
     }
 
     private static readonly DiscordMemberRoles EmptyRoles = new(Array.Empty<string>(), Array.Empty<DiscordGuildRole>());
@@ -125,9 +191,7 @@ public sealed class PlayerDonatorRoleSyncServiceTests
     private static PlayerDonatorRoleSyncService CreateService(
         IDiscordLinkedAccountStore linkedStore,
         IDiscordMemberRoleClient memberRoleClient,
-        IPlayerRoleCodeReader roleCodeReader,
-        IPlayerRoleAssigner roleAssigner,
-        IPlayerDefaultRoleResetter defaultRoleResetter,
+        IPlayerPrivilegeMutator privilegeMutator,
         IPlayerMessenger messenger)
     {
         return new PlayerDonatorRoleSyncService(
@@ -142,17 +206,18 @@ public sealed class PlayerDonatorRoleSyncServiceTests
             memberRoleClient,
             new DiscordRoleNameResolver(),
             new DiscordDonatorRolePlanner(new DonatorPrivilegeCatalog()),
-            roleCodeReader,
-            roleAssigner,
-            defaultRoleResetter,
+            new DonatorPrivilegeCatalog(),
+            new DonatorFeaturePrivilegeResolver(),
+            privilegeMutator,
             messenger);
     }
 
-    private static IServerPlayer CreatePlayer(string playerUid, string playerName)
+    private static IServerPlayer CreatePlayer(string playerUid, string playerName, params string[] privileges)
     {
         var proxy = DispatchProxy.Create<IServerPlayer, TestServerPlayerProxy>();
         ((TestServerPlayerProxy)(object)proxy).Values["get_PlayerUID"] = playerUid;
         ((TestServerPlayerProxy)(object)proxy).Values["get_PlayerName"] = playerName;
+        ((TestServerPlayerProxy)(object)proxy).Privileges.UnionWith(privileges);
         return proxy;
     }
 
@@ -191,50 +256,22 @@ public sealed class PlayerDonatorRoleSyncServiceTests
         }
     }
 
-    private sealed class FakePlayerRoleCodeReader : IPlayerRoleCodeReader
+    private sealed class FakePlayerPrivilegeMutator : IPlayerPrivilegeMutator
     {
-        private readonly string roleCode;
+        public List<string> GrantedPrivileges { get; } = new();
 
-        public FakePlayerRoleCodeReader(string roleCode)
+        public List<string> RevokedPrivileges { get; } = new();
+
+        public string? LastGrantedPrivilege => GrantedPrivileges.LastOrDefault();
+
+        public void Grant(IServerPlayer player, string privilege)
         {
-            this.roleCode = roleCode;
+            GrantedPrivileges.Add(privilege);
         }
 
-        public string Read(IServerPlayer player)
+        public void Revoke(IServerPlayer player, string privilege)
         {
-            return roleCode;
-        }
-    }
-
-    private sealed class FakePlayerRoleAssigner : IPlayerRoleAssigner
-    {
-        public string? LastAssignedRoleCode { get; private set; }
-
-        public void Assign(IServerPlayer player, string roleCode)
-        {
-            LastAssignedRoleCode = roleCode;
-        }
-    }
-
-    private sealed class FakePlayerDefaultRoleResetter : IPlayerDefaultRoleResetter
-    {
-        private readonly string defaultRoleCode;
-
-        public FakePlayerDefaultRoleResetter(string defaultRoleCode)
-        {
-            this.defaultRoleCode = defaultRoleCode;
-        }
-
-        public int ResetCount { get; private set; }
-
-        public void Reset(IServerPlayer player)
-        {
-            ResetCount++;
-        }
-
-        public string GetDefaultRoleCode()
-        {
-            return defaultRoleCode;
+            RevokedPrivileges.Add(privilege);
         }
     }
 
@@ -270,12 +307,20 @@ public sealed class PlayerDonatorRoleSyncServiceTests
     private class TestServerPlayerProxy : DispatchProxy
     {
         public Dictionary<string, object> Values { get; } = new(StringComparer.Ordinal);
+        public HashSet<string> Privileges { get; } = new(StringComparer.OrdinalIgnoreCase);
 
         protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
         {
             if (targetMethod == null)
             {
                 return null;
+            }
+
+            if (string.Equals(targetMethod.Name, nameof(IServerPlayer.HasPrivilege), StringComparison.Ordinal)
+                && args?.Length == 1
+                && args[0] is string privilege)
+            {
+                return Privileges.Contains(privilege);
             }
 
             if (Values.TryGetValue(targetMethod.Name, out object value))

@@ -34,7 +34,7 @@ namespace FirstStepsTweaks.Features
                 discordConfig.LinkCodeExpiryMinutes);
             var webhookClient = new DiscordWebhookClient();
             var privilegeCatalog = new DonatorPrivilegeCatalog();
-            var roleAssigner = new PlayerRoleAssigner(api);
+            var featurePrivilegeResolver = new DonatorFeaturePrivilegeResolver();
             var avatarService = new DiscordPlayerAvatarService(
                 discordConfig,
                 linkedAccountStore,
@@ -49,9 +49,9 @@ namespace FirstStepsTweaks.Features
                 new DiscordMemberRoleClient(webhookClient),
                 new DiscordRoleNameResolver(),
                 new DiscordDonatorRolePlanner(privilegeCatalog),
-                new PlayerRoleCodeReader(),
-                roleAssigner,
-                new PlayerDefaultRoleResetter(api, roleAssigner),
+                privilegeCatalog,
+                featurePrivilegeResolver,
+                new PlayerPrivilegeMutator(api),
                 runtime.Messenger);
 
             linkPoller = new DiscordLinkPoller(

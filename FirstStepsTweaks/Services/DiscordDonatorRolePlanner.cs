@@ -23,7 +23,7 @@ namespace FirstStepsTweaks.Services
                     continue;
                 }
 
-                return new DiscordDonatorRolePlan(definition.InGameRoleCode);
+                return new DiscordDonatorRolePlan(definition.Privilege);
             }
 
             return new DiscordDonatorRolePlan(null);

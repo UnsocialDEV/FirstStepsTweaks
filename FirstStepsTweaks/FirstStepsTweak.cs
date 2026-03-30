@@ -88,7 +88,7 @@ namespace FirstStepsTweaks
             api.Permissions.RegisterPrivilege(
                 "firststepstweaks.back",
                 "Allows the player to use the /back command to return to their last location after death.",
-                true
+                false
             );
 
             api.Permissions.RegisterPrivilege(

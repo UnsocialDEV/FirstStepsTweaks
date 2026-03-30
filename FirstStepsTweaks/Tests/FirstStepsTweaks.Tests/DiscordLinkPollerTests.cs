@@ -64,9 +64,9 @@ public sealed class DiscordLinkPollerTests
                 new FakeDiscordMemberRoleClient(),
                 new DiscordRoleNameResolver(),
                 new DiscordDonatorRolePlanner(new DonatorPrivilegeCatalog()),
-                new FakePlayerRoleCodeReader(),
-                new FakePlayerRoleAssigner(),
-                new FakePlayerDefaultRoleResetter(),
+                new DonatorPrivilegeCatalog(),
+                new DonatorFeaturePrivilegeResolver(),
+                new FakePlayerPrivilegeMutator(),
                 new FakePlayerMessenger()),
             new FakePlayerMessenger());
     }
@@ -194,30 +194,14 @@ public sealed class DiscordLinkPollerTests
         }
     }
 
-    private sealed class FakePlayerRoleCodeReader : IPlayerRoleCodeReader
+    private sealed class FakePlayerPrivilegeMutator : IPlayerPrivilegeMutator
     {
-        public string Read(IServerPlayer player)
-        {
-            return null;
-        }
-    }
-
-    private sealed class FakePlayerRoleAssigner : IPlayerRoleAssigner
-    {
-        public void Assign(IServerPlayer player, string roleCode)
-        {
-        }
-    }
-
-    private sealed class FakePlayerDefaultRoleResetter : IPlayerDefaultRoleResetter
-    {
-        public void Reset(IServerPlayer player)
+        public void Grant(IServerPlayer player, string privilege)
         {
         }
 
-        public string GetDefaultRoleCode()
+        public void Revoke(IServerPlayer player, string privilege)
         {
-            return "default";
         }
     }
 

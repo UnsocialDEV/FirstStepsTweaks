@@ -2,11 +2,11 @@ namespace FirstStepsTweaks.Services
 {
     public sealed class DiscordDonatorRolePlan
     {
-        public DiscordDonatorRolePlan(string targetRoleCode)
+        public DiscordDonatorRolePlan(string targetPrivilege)
         {
-            TargetRoleCode = targetRoleCode;
+            TargetPrivilege = targetPrivilege;
         }
 
-        public string TargetRoleCode { get; }
+        public string TargetPrivilege { get; }
     }
 }
