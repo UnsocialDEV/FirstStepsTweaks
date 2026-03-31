@@ -20,6 +20,7 @@ namespace FirstStepsTweaks.Discord
         private readonly IDiscordWebhookClient webhookClient;
         private readonly IDiscordLinkLastMessageStore lastMessageStore;
         private readonly DiscordLinkService linkService;
+        private readonly DiscordLinkRewardService rewardService;
         private readonly DiscordLinkCodeMessageParser parser;
         private readonly IPlayerLookup playerLookup;
         private readonly PlayerDonatorRoleSyncService roleSyncService;
@@ -33,6 +34,7 @@ namespace FirstStepsTweaks.Discord
             IDiscordWebhookClient webhookClient,
             IDiscordLinkLastMessageStore lastMessageStore,
             DiscordLinkService linkService,
+            DiscordLinkRewardService rewardService,
             DiscordLinkCodeMessageParser parser,
             IPlayerLookup playerLookup,
             PlayerDonatorRoleSyncService roleSyncService,
@@ -43,6 +45,7 @@ namespace FirstStepsTweaks.Discord
             this.webhookClient = webhookClient;
             this.lastMessageStore = lastMessageStore;
             this.linkService = linkService;
+            this.rewardService = rewardService;
             this.parser = parser;
             this.playerLookup = playerLookup;
             this.roleSyncService = roleSyncService;
@@ -150,9 +153,11 @@ namespace FirstStepsTweaks.Discord
                 string discordUserId = TryGetAuthorId(message);
                 if (linkService.TryCompleteLink(discordUserId, content, DateTime.UtcNow, out string playerUid))
                 {
+                    IServerPlayer player = playerLookup.FindOnlinePlayerByUid(playerUid);
+                    DiscordLinkRewardOutcome rewardOutcome = rewardService.HandleSuccessfulLink(playerUid, player);
                     await SendChannelMessageAsync(
                         $"<@{discordUserId}> link successful. Your donator role will sync in game now, or on your next join.");
-                    await SyncLinkedPlayerAsync(playerUid);
+                    await SyncLinkedPlayerAsync(playerUid, player, rewardOutcome);
                 }
                 else if (parser.TryParseCandidateCode(content, out _))
                 {
@@ -185,9 +190,8 @@ namespace FirstStepsTweaks.Discord
             return null;
         }
 
-        private async Task SyncLinkedPlayerAsync(string playerUid)
+        private async Task SyncLinkedPlayerAsync(string playerUid, IServerPlayer player, DiscordLinkRewardOutcome rewardOutcome)
         {
-            IServerPlayer player = playerLookup.FindOnlinePlayerByUid(playerUid);
             if (player == null)
             {
                 return;
@@ -197,11 +201,24 @@ namespace FirstStepsTweaks.Discord
 
             messenger.SendDual(
                 player,
-                "Discord account linked. Donator role sync requested.",
+                BuildLinkedMessage(rewardOutcome),
                 GlobalConstants.InfoLogChatGroup,
                 (int)EnumChatType.Notification,
                 GlobalConstants.GeneralChatGroup,
                 (int)EnumChatType.Notification);
+        }
+
+        private static string BuildLinkedMessage(DiscordLinkRewardOutcome rewardOutcome)
+        {
+            switch (rewardOutcome)
+            {
+                case DiscordLinkRewardOutcome.GrantedImmediately:
+                    return "Discord account linked. Donator role sync requested. You received 10 rusty gears.";
+                case DiscordLinkRewardOutcome.QueuedForNextJoin:
+                    return "Discord account linked. Donator role sync requested. Your 10 rusty gears will be delivered on your next join.";
+                default:
+                    return "Discord account linked. Donator role sync requested.";
+            }
         }
 
         private static bool IsBotMessage(JsonElement message)

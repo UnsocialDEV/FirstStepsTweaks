@@ -14,6 +14,7 @@ namespace FirstStepsTweaks.Features
         private readonly BackCommands backCommands;
         private readonly HomeCommands homeCommands;
         private readonly SpawnCommands spawnCommands;
+        private readonly StormShelterCommands stormShelterCommands;
         private readonly StuckCommand stuckCommand;
         private readonly WarpCommands warpCommands;
         private readonly RtpCommands rtpCommands;
@@ -33,6 +34,12 @@ namespace FirstStepsTweaks.Features
             backCommands = new BackCommands(api, config, runtime.Messenger, runtime.BackLocationStore, runtime.TeleportWarmupService, warmupResolver);
             homeCommands = new HomeCommands(api, config, homeStore, runtime.Messenger, runtime.BackLocationStore, runtime.TeleportWarmupService, homeLimitResolver, warmupResolver, homeSlotPolicy, homeAccessPolicy, homeDeletionTargetResolver);
             spawnCommands = new SpawnCommands(api, config, new SpawnStore(api), runtime.Messenger, runtime.BackLocationStore, runtime.TeleportWarmupService, warmupResolver);
+            var stormShelterStore = new StormShelterStore(api);
+            stormShelterCommands = new StormShelterCommands(
+                api,
+                stormShelterStore,
+                runtime.Messenger,
+                new StormShelterTeleportService(stormShelterStore, runtime.BackLocationStore));
             stuckCommand = new StuckCommand(
                 api,
                 config,
@@ -71,6 +78,11 @@ namespace FirstStepsTweaks.Features
             if (config.Features.EnableSpawnCommands)
             {
                 spawnCommands.Register();
+            }
+
+            if (config.Features.EnableStormShelterCommands)
+            {
+                stormShelterCommands.Register();
             }
 
             if (config.Features.EnableStuckCommand)

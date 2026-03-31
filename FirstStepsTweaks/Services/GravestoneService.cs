@@ -184,6 +184,25 @@ namespace FirstStepsTweaks.Services
             return true;
         }
 
+        public int ClearAllGraves()
+        {
+            int cleared = 0;
+            foreach (GraveData grave in graveManager.GetAll())
+            {
+                if (grave == null)
+                {
+                    continue;
+                }
+
+                if (TryRemoveGrave(grave.GraveId, out _))
+                {
+                    cleared++;
+                }
+            }
+
+            return cleared;
+        }
+
         private void OnEntityDeath(Entity entity, DamageSource damageSource)
         {
             if (!(entity is EntityPlayer entityPlayer))

@@ -25,6 +25,11 @@ namespace FirstStepsTweaks.Teleport
             api.WorldManager.SaveGame.StoreData(WarpDataKey, warps);
         }
 
+        public void ClearWarps()
+        {
+            api.WorldManager.SaveGame.StoreData(WarpDataKey, (Dictionary<string, double[]>)null);
+        }
+
         public string NormalizeWarpName(string warpName)
         {
             return (warpName ?? string.Empty).Trim().ToLowerInvariant();

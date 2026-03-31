@@ -33,5 +33,21 @@ namespace FirstStepsTweaks.Services
 
             player.SetModdata(TotalPlayedSecondsKey, BitConverter.GetBytes(updatedTotal));
         }
+
+        public void SetTotalPlayedSeconds(IServerPlayer player, long totalPlayedSeconds)
+        {
+            if (player == null)
+            {
+                return;
+            }
+
+            long clampedTotal = Math.Max(0, totalPlayedSeconds);
+            player.SetModdata(TotalPlayedSecondsKey, BitConverter.GetBytes(clampedTotal));
+        }
+
+        public void ResetTotalPlayedSeconds(IServerPlayer player)
+        {
+            player?.SetModdata(TotalPlayedSecondsKey, null);
+        }
     }
 }

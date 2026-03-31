@@ -25,6 +25,11 @@ namespace FirstStepsTweaks.Discord
             return links.TryGetValue(playerUid, out string discordUserId) ? discordUserId : null;
         }
 
+        public IReadOnlyDictionary<string, string> GetAllLinkedDiscordUserIds()
+        {
+            return LoadLinks();
+        }
+
         public void SetLinkedDiscordUserId(string playerUid, string discordUserId)
         {
             if (string.IsNullOrWhiteSpace(playerUid) || string.IsNullOrWhiteSpace(discordUserId))

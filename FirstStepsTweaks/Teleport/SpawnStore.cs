@@ -42,5 +42,10 @@ namespace FirstStepsTweaks.Teleport
             position = new Vec3d(spawnData[0], spawnData[1], spawnData[2]);
             return true;
         }
+
+        public void ClearSpawn()
+        {
+            api.WorldManager.SaveGame.StoreData(SpawnKey, (double[])null);
+        }
     }
 }

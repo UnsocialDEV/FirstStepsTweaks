@@ -21,6 +21,11 @@ namespace FirstStepsTweaks.Discord
             return pendingCodes.Keys.ToArray();
         }
 
+        public IReadOnlyDictionary<string, PendingDiscordLinkCodeRecord> GetPendingCodeRecords(DateTime nowUtc)
+        {
+            return LoadActiveCodes(nowUtc);
+        }
+
         public bool TryGetCode(string code, DateTime nowUtc, out PendingDiscordLinkCodeRecord record)
         {
             record = null;

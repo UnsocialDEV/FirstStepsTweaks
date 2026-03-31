@@ -17,7 +17,7 @@ namespace FirstStepsTweaks
         public override void StartServerSide(ICoreServerAPI api)
         {
             var config = LoadConfig(api);
-            var runtime = new FeatureRuntime(api);
+            var runtime = new FeatureRuntime(api, config);
 
             registerPrivileges(api);
             api.Event.MatchesGridRecipe += OnMatchesGridRecipe;

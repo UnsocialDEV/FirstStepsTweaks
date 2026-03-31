@@ -4,5 +4,6 @@ namespace FirstStepsTweaks.Discord
     {
         string Load();
         void Save(string lastMessageId);
+        void Clear();
     }
 }

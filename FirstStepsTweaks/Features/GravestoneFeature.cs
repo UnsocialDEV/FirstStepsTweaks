@@ -14,7 +14,7 @@ namespace FirstStepsTweaks.Features
         public GravestoneFeature(ICoreServerAPI api, FirstStepsTweaksConfig config, FeatureRuntime runtime)
         {
             this.config = config;
-            var gravestoneService = new GravestoneService(api, config, runtime.Messenger, runtime.LandClaimAccessor);
+            var gravestoneService = runtime.GravestoneService;
             whereIsMyGraveCommand = new WhereIsMyGraveCommand(api, gravestoneService, runtime.Messenger, runtime.BackLocationStore);
             gravestoneCommands = new GravestoneCommands(api, gravestoneService, runtime.Messenger, runtime.PlayerLookup, runtime.BackLocationStore);
         }

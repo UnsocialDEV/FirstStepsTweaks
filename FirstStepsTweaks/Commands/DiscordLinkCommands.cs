@@ -57,7 +57,7 @@ namespace FirstStepsTweaks.Commands
             }
 
             DiscordLinkCodeIssue issue = linkService.CreateLinkCode(player.PlayerUID, DateTime.UtcNow);
-            string message = $"Post code {issue.Code} in the Discord link channel to link your account. Code expires at {issue.ExpiresAtUtc:u}.";
+            string message = $"Post code {issue.Code} in the Discord link channel to link your account. After Discord confirms the link, first-time links receive 10 rusty gears. Code expires at {issue.ExpiresAtUtc:u}.";
 
             messenger.SendDual(
                 player,

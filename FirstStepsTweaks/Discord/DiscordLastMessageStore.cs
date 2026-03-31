@@ -21,5 +21,10 @@ namespace FirstStepsTweaks.Discord
         {
             api.WorldManager.SaveGame.StoreData(DiscordLastIdKey, lastMessageId);
         }
+
+        public void Clear()
+        {
+            api.WorldManager.SaveGame.StoreData(DiscordLastIdKey, (string)null);
+        }
     }
 }

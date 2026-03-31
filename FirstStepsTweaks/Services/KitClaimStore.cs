@@ -37,5 +37,20 @@ namespace FirstStepsTweaks.Services
         {
             player?.SetModdata(SupporterKey, new byte[] { 1 });
         }
+
+        public void SetStarterClaimed(IServerPlayer player, bool value)
+        {
+            player?.SetModdata(StarterKey, value ? new byte[] { 1 } : null);
+        }
+
+        public void SetWinterClaimed(IServerPlayer player, bool value)
+        {
+            player?.SetModdata(WinterKey, value ? new byte[] { 1 } : null);
+        }
+
+        public void SetSupporterClaimed(IServerPlayer player, bool value)
+        {
+            player?.SetModdata(SupporterKey, value ? new byte[] { 1 } : null);
+        }
     }
 }

@@ -1,6 +1,8 @@
 using FirstStepsTweaks.Commands;
 using FirstStepsTweaks.Config;
+using FirstStepsTweaks.Discord;
 using FirstStepsTweaks.Services;
+using FirstStepsTweaks.Teleport;
 using Vintagestory.API.Server;
 
 namespace FirstStepsTweaks.Features
@@ -22,7 +24,36 @@ namespace FirstStepsTweaks.Features
         {
             if (config.Features.EnableDebugCommand)
             {
-                new DebugCommands(api).Register();
+                var joinHistoryStore = new JoinHistoryStore();
+                var kitClaimStore = new KitClaimStore();
+                var playtimeStore = new PlayerPlaytimeStore();
+                var homeStore = new HomeStore();
+                var tpaPreferenceStore = new TpaPreferenceStore();
+                var spawnStore = new SpawnStore(api);
+                var warpStore = new WarpStore(api);
+                var linkedAccountStore = new DiscordLinkedAccountStore(api);
+                var pendingCodeStore = new PendingDiscordLinkCodeStore(api);
+                var rewardStateStore = new DiscordLinkRewardStateStore(api);
+                var relayCursorStore = new DiscordLastMessageStore(api);
+                var linkCursorStore = new DiscordLinkLastMessageStore(api);
+
+                new DebugCommands(
+                    api,
+                    runtime.PlayerLookup,
+                    runtime.Messenger,
+                    joinHistoryStore,
+                    kitClaimStore,
+                    playtimeStore,
+                    homeStore,
+                    tpaPreferenceStore,
+                    spawnStore,
+                    warpStore,
+                    runtime.GravestoneService,
+                    linkedAccountStore,
+                    pendingCodeStore,
+                    rewardStateStore,
+                    relayCursorStore,
+                    linkCursorStore).Register();
             }
 
             if (config.Features.EnableKitCommands)

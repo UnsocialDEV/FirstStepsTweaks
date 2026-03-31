@@ -60,6 +60,7 @@ namespace FirstStepsTweaks.Features
                 webhookClient,
                 new DiscordLinkLastMessageStore(api),
                 linkService,
+                runtime.DiscordLinkRewardService,
                 linkCodeParser,
                 runtime.PlayerLookup,
                 roleSyncService,

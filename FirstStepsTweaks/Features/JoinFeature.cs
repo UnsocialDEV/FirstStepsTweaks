@@ -1,4 +1,5 @@
 using FirstStepsTweaks.Config;
+using FirstStepsTweaks.Discord;
 using FirstStepsTweaks.Services;
 using Vintagestory.API.Server;
 
@@ -9,6 +10,7 @@ namespace FirstStepsTweaks.Features
         private readonly ICoreServerAPI api;
         private readonly JoinService joinService;
         private readonly JoinInvulnerabilityService joinInvulnerabilityService;
+        private readonly DiscordLinkRewardJoinHandler discordLinkRewardJoinHandler;
         private readonly LandClaimNotificationService landClaimNotificationService;
 
         public JoinFeature(ICoreServerAPI api, FirstStepsTweaksConfig config, FeatureRuntime runtime)
@@ -16,6 +18,7 @@ namespace FirstStepsTweaks.Features
             this.api = api;
             joinService = new JoinService(api, config);
             joinInvulnerabilityService = new JoinInvulnerabilityService(api);
+            discordLinkRewardJoinHandler = new DiscordLinkRewardJoinHandler(runtime.DiscordLinkRewardService, runtime.Messenger);
 
             if (config.Features.EnableLandClaimNotifications)
             {
@@ -28,6 +31,7 @@ namespace FirstStepsTweaks.Features
             api.Event.PlayerJoin += joinInvulnerabilityService.OnPlayerJoin;
             api.Event.PlayerNowPlaying += joinInvulnerabilityService.OnPlayerNowPlaying;
             api.Event.PlayerNowPlaying += joinService.OnPlayerNowPlaying;
+            api.Event.PlayerNowPlaying += discordLinkRewardJoinHandler.OnPlayerNowPlaying;
             api.Event.PlayerLeave += joinInvulnerabilityService.OnPlayerLeave;
             api.Event.PlayerLeave += joinService.OnPlayerLeave;
         }

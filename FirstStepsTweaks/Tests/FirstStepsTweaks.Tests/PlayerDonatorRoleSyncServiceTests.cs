@@ -165,6 +165,11 @@ public sealed class PlayerDonatorRoleSyncServiceTests
             return links.TryGetValue(playerUid, out string discordUserId) ? discordUserId : null;
         }
 
+        public IReadOnlyDictionary<string, string> GetAllLinkedDiscordUserIds()
+        {
+            return links;
+        }
+
         public void SetLinkedDiscordUserId(string playerUid, string discordUserId)
         {
             links[playerUid] = discordUserId;

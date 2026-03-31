@@ -21,6 +21,7 @@ namespace FirstStepsTweaks.Config
         public bool EnableDebugCommand { get; set; } = true;
         public bool EnableDiscordCommand { get; set; } = true;
         public bool EnableSpawnCommands { get; set; } = true;
+        public bool EnableStormShelterCommands { get; set; } = true;
         public bool EnableStuckCommand { get; set; } = true;
         public bool EnableBackCommand { get; set; } = true;
         public bool EnableHomeCommands { get; set; } = true;

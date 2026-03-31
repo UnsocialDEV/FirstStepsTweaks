@@ -88,13 +88,33 @@ namespace FirstStepsTweaks.Teleport
                 return;
             }
 
+            Set(player, homeName, player.Entity.Pos.X, player.Entity.Pos.Y, player.Entity.Pos.Z);
+        }
+
+        public void Set(IServerPlayer player, string homeName, Vec3d position)
+        {
+            if (position == null)
+            {
+                return;
+            }
+
+            Set(player, homeName, position.X, position.Y, position.Z);
+        }
+
+        public void Set(IServerPlayer player, string homeName, double x, double y, double z)
+        {
+            if (player == null)
+            {
+                return;
+            }
+
             Dictionary<string, HomeLocation> homes = LoadHomes(player);
             string normalizedHomeName = NormalizeHomeName(homeName);
             long createdOrder = homes.TryGetValue(normalizedHomeName, out HomeLocation existing)
                 ? existing.CreatedOrder
                 : GetNextCreatedOrder(homes);
 
-            homes[normalizedHomeName] = new HomeLocation(player.Entity.Pos.X, player.Entity.Pos.Y, player.Entity.Pos.Z, createdOrder);
+            homes[normalizedHomeName] = new HomeLocation(x, y, z, createdOrder);
             SaveHomes(player, homes);
         }
 
@@ -109,6 +129,17 @@ namespace FirstStepsTweaks.Teleport
 
             SaveHomes(player, homes);
             return true;
+        }
+
+        public void Clear(IServerPlayer player)
+        {
+            if (player == null)
+            {
+                return;
+            }
+
+            player.SetModdata(HomesKey, null);
+            player.SetModdata(LegacyHomeKey, null);
         }
 
         public string NormalizeHomeName(string homeName)

@@ -59,6 +59,11 @@ public sealed class DiscordLinkServiceTests
             return links.TryGetValue(playerUid, out string discordUserId) ? discordUserId : null;
         }
 
+        public IReadOnlyDictionary<string, string> GetAllLinkedDiscordUserIds()
+        {
+            return links;
+        }
+
         public void SetLinkedDiscordUserId(string playerUid, string discordUserId)
         {
             links[playerUid] = discordUserId;
@@ -78,6 +83,12 @@ public sealed class DiscordLinkServiceTests
         {
             RemoveExpired(nowUtc);
             return pendingCodes.Keys.ToArray();
+        }
+
+        public IReadOnlyDictionary<string, PendingDiscordLinkCodeRecord> GetPendingCodeRecords(DateTime nowUtc)
+        {
+            RemoveExpired(nowUtc);
+            return pendingCodes;
         }
 
         public bool TryGetCode(string code, DateTime nowUtc, out PendingDiscordLinkCodeRecord record)

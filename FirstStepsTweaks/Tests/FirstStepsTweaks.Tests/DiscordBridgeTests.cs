@@ -119,6 +119,11 @@ public sealed class DiscordBridgeTests
         {
             SavedLastMessageId = lastMessageId;
         }
+
+        public void Clear()
+        {
+            SavedLastMessageId = null;
+        }
     }
 
     private class TestCoreServerApiProxy : DispatchProxy

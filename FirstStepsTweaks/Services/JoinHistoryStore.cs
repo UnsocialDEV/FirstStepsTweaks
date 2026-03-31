@@ -18,6 +18,17 @@ namespace FirstStepsTweaks.Services
             player?.SetModdata(FirstJoinKey, new byte[] { 1 });
         }
 
+        public void SetFirstJoinRecorded(IServerPlayer player, bool value)
+        {
+            if (value)
+            {
+                MarkFirstJoinRecorded(player);
+                return;
+            }
+
+            player?.SetModdata(FirstJoinKey, null);
+        }
+
         public int GetDaysSinceLastSeen(IServerPlayer player, double currentTotalDays)
         {
             byte[] lastSeenData = player?.GetModdata(LastSeenDayKey);
@@ -33,6 +44,28 @@ namespace FirstStepsTweaks.Services
         public void RecordLastSeenDay(IServerPlayer player, double currentTotalDays)
         {
             player?.SetModdata(LastSeenDayKey, BitConverter.GetBytes(currentTotalDays));
+        }
+
+        public double? GetLastSeenTotalDays(IServerPlayer player)
+        {
+            byte[] lastSeenData = player?.GetModdata(LastSeenDayKey);
+            if (lastSeenData == null || lastSeenData.Length != sizeof(double))
+            {
+                return null;
+            }
+
+            return BitConverter.ToDouble(lastSeenData, 0);
+        }
+
+        public void SetLastSeenDay(IServerPlayer player, double? totalDays)
+        {
+            if (totalDays == null)
+            {
+                player?.SetModdata(LastSeenDayKey, null);
+                return;
+            }
+
+            player?.SetModdata(LastSeenDayKey, BitConverter.GetBytes(totalDays.Value));
         }
     }
 }
