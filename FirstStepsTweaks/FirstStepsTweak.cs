@@ -12,7 +12,6 @@ namespace FirstStepsTweaks
     {
         private const string ConfigFileName = "firststepstweaks.json";
         private const string LegacyConfigFileName = "FirstStepsTweaks.json";
-        private static readonly AssetLocation SupporterSpearCode = new AssetLocation("firststepstweaks", "supporter-spear");
 
         public override void StartServerSide(ICoreServerAPI api)
         {
@@ -20,7 +19,6 @@ namespace FirstStepsTweaks
             var runtime = new FeatureRuntime(api, config);
 
             registerPrivileges(api);
-            api.Event.MatchesGridRecipe += OnMatchesGridRecipe;
 
             new JoinFeature(api, config, runtime).Register();
             new TeleportFeature(api, config, runtime).Register();
@@ -92,12 +90,6 @@ namespace FirstStepsTweaks
             );
 
             api.Permissions.RegisterPrivilege(
-                "firststepstweaks.supporterkit",
-                "Allows the player to use the /supporterkit command to receive a special donator kit.",
-                false
-            );
-
-            api.Permissions.RegisterPrivilege(
                 "firststepstweaks.supporter",
                 "Allows access to supporter tier features.",
                 false
@@ -137,18 +129,6 @@ namespace FirstStepsTweaks
                 "Allows the player to bypass teleport cooldown timers (for example, /rtp cooldown).",
                 true
             );
-        }
-
-
-        // this handles the supporter spear only being craftable by donators
-        private bool OnMatchesGridRecipe(IPlayer player, GridRecipe recipe, ItemSlot[] ingredients, int gridWidth)
-        {
-            if (recipe?.Output?.Code == null || !recipe.Output.Code.Equals(SupporterSpearCode))
-            {
-                return true;
-            }
-
-            return player?.HasPrivilege("firststepstweaks.supporter") == true;
         }
     }
 }

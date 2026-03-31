@@ -2,13 +2,12 @@ namespace FirstStepsTweaks.Services
 {
     public sealed class DonatorPrivilegeDefinition
     {
-        public DonatorPrivilegeDefinition(DonatorTier tier, string label, string roleName, string privilege, string inGameRoleCode)
+        public DonatorPrivilegeDefinition(DonatorTier tier, string label, string roleName, string privilege)
         {
             Tier = tier;
             Label = label;
             RoleName = roleName;
             Privilege = privilege;
-            InGameRoleCode = inGameRoleCode;
         }
 
         public DonatorTier Tier { get; }
@@ -18,7 +17,5 @@ namespace FirstStepsTweaks.Services
         public string RoleName { get; }
 
         public string Privilege { get; }
-
-        public string InGameRoleCode { get; }
     }
 }

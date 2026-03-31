@@ -17,8 +17,6 @@ namespace FirstStepsTweaks.Services
 
         public bool WinterKitClaimed { get; set; }
 
-        public bool SupporterKitClaimed { get; set; }
-
         public long TotalPlayedSeconds { get; set; }
 
         public bool TpaDisabled { get; set; }

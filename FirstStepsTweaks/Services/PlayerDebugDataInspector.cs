@@ -38,7 +38,6 @@ namespace FirstStepsTweaks.Services
                 LastSeenTotalDays = joinHistoryStore.GetLastSeenTotalDays(player),
                 StarterKitClaimed = kitClaimStore.HasStarterClaim(player),
                 WinterKitClaimed = kitClaimStore.HasWinterClaim(player),
-                SupporterKitClaimed = kitClaimStore.HasSupporterClaim(player),
                 TotalPlayedSeconds = playtimeStore.GetTotalPlayedSeconds(player),
                 TpaDisabled = tpaPreferenceStore.IsDisabled(player),
                 Homes = new Dictionary<string, HomeLocation>(homeStore.GetAll(player))
@@ -53,7 +52,6 @@ namespace FirstStepsTweaks.Services
             builder.AppendLine($"- lastSeenTotalDays: {FormatNullableDouble(snapshot.LastSeenTotalDays)}");
             builder.AppendLine($"- starterKitClaimed: {snapshot.StarterKitClaimed}");
             builder.AppendLine($"- winterKitClaimed: {snapshot.WinterKitClaimed}");
-            builder.AppendLine($"- supporterKitClaimed: {snapshot.SupporterKitClaimed}");
             builder.AppendLine($"- totalPlayedSeconds: {snapshot.TotalPlayedSeconds}");
             builder.AppendLine($"- tpaDisabled: {snapshot.TpaDisabled}");
             builder.AppendLine($"- homes: {snapshot.Homes.Count}");

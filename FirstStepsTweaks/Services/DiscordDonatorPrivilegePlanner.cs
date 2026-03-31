@@ -3,30 +3,33 @@ using System.Collections.Generic;
 
 namespace FirstStepsTweaks.Services
 {
-    public sealed class DiscordDonatorRolePlanner
+    public sealed class DiscordDonatorPrivilegePlanner
     {
         private readonly DonatorPrivilegeCatalog privilegeCatalog;
 
-        public DiscordDonatorRolePlanner(DonatorPrivilegeCatalog privilegeCatalog)
+        public DiscordDonatorPrivilegePlanner(DonatorPrivilegeCatalog privilegeCatalog)
         {
             this.privilegeCatalog = privilegeCatalog;
         }
 
-        public DiscordDonatorRolePlan Plan(IReadOnlyCollection<string> discordRoleNames)
+        public DiscordDonatorPrivilegePlan Plan(IReadOnlyCollection<string> discordRoleNames)
         {
             var normalizedDiscordRoleNames = new HashSet<string>(discordRoleNames ?? Array.Empty<string>(), StringComparer.OrdinalIgnoreCase);
+            var targetPrivileges = new List<string>();
+            bool matchedTier = false;
 
             foreach (DonatorPrivilegeDefinition definition in privilegeCatalog.GetAll())
             {
-                if (!normalizedDiscordRoleNames.Contains(definition.RoleName))
+                if (!matchedTier && !normalizedDiscordRoleNames.Contains(definition.RoleName))
                 {
                     continue;
                 }
 
-                return new DiscordDonatorRolePlan(definition.InGameRoleCode);
+                matchedTier = true;
+                targetPrivileges.Add(definition.Privilege);
             }
 
-            return new DiscordDonatorRolePlan(null);
+            return new DiscordDonatorPrivilegePlan(targetPrivileges);
         }
     }
 }

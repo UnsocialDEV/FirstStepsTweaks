@@ -122,11 +122,8 @@ namespace FirstStepsTweaks.Commands
                 case "winter":
                     kitClaimStore.SetWinterClaimed(target, claimed);
                     break;
-                case "supporter":
-                    kitClaimStore.SetSupporterClaimed(target, claimed);
-                    break;
                 default:
-                    SendDual(args.Caller.Player, "Kit must be starter, winter, or supporter.");
+                    SendDual(args.Caller.Player, "Kit must be starter or winter.");
                     return TextCommandResult.Success();
             }
 

@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using FirstStepsTweaks.Discord;
 using FirstStepsTweaks.Infrastructure.Messaging;
@@ -16,10 +18,10 @@ namespace FirstStepsTweaks.Services
         private readonly IDiscordLinkedAccountStore linkedAccountStore;
         private readonly IDiscordMemberRoleClient memberRoleClient;
         private readonly DiscordRoleNameResolver roleNameResolver;
-        private readonly DiscordDonatorRolePlanner planner;
-        private readonly IPlayerRoleCodeReader roleCodeReader;
-        private readonly IPlayerRoleAssigner roleAssigner;
-        private readonly IPlayerDefaultRoleResetter defaultRoleResetter;
+        private readonly DiscordDonatorPrivilegePlanner planner;
+        private readonly IPlayerPrivilegeReader privilegeReader;
+        private readonly IPlayerPrivilegeMutator privilegeMutator;
+        private readonly DonatorPrivilegeCatalog privilegeCatalog;
         private readonly IPlayerMessenger messenger;
 
         public PlayerDonatorRoleSyncService(
@@ -28,10 +30,10 @@ namespace FirstStepsTweaks.Services
             IDiscordLinkedAccountStore linkedAccountStore,
             IDiscordMemberRoleClient memberRoleClient,
             DiscordRoleNameResolver roleNameResolver,
-            DiscordDonatorRolePlanner planner,
-            IPlayerRoleCodeReader roleCodeReader,
-            IPlayerRoleAssigner roleAssigner,
-            IPlayerDefaultRoleResetter defaultRoleResetter,
+            DiscordDonatorPrivilegePlanner planner,
+            IPlayerPrivilegeReader privilegeReader,
+            IPlayerPrivilegeMutator privilegeMutator,
+            DonatorPrivilegeCatalog privilegeCatalog,
             IPlayerMessenger messenger)
         {
             this.api = api;
@@ -40,9 +42,9 @@ namespace FirstStepsTweaks.Services
             this.memberRoleClient = memberRoleClient;
             this.roleNameResolver = roleNameResolver;
             this.planner = planner;
-            this.roleCodeReader = roleCodeReader;
-            this.roleAssigner = roleAssigner;
-            this.defaultRoleResetter = defaultRoleResetter;
+            this.privilegeReader = privilegeReader;
+            this.privilegeMutator = privilegeMutator;
+            this.privilegeCatalog = privilegeCatalog;
             this.messenger = messenger;
         }
 
@@ -72,7 +74,7 @@ namespace FirstStepsTweaks.Services
             }
 
             DiscordMemberRoles memberRoles = await memberRoleClient.GetMemberRolesAsync(config, discordUserId);
-            DiscordDonatorRolePlan plan = planner.Plan(
+            DiscordDonatorPrivilegePlan plan = planner.Plan(
                 roleNameResolver.ResolveRoleNames(memberRoles.MemberRoleIds, memberRoles.GuildRoles));
 
             ApplyPlan(player, plan);
@@ -85,15 +87,16 @@ namespace FirstStepsTweaks.Services
                 return;
             }
 
-            string currentRoleCode = roleCodeReader.Read(player);
-            string defaultRoleCode = defaultRoleResetter.GetDefaultRoleCode();
-
-            if (string.Equals(currentRoleCode, defaultRoleCode, StringComparison.OrdinalIgnoreCase))
+            IReadOnlyCollection<string> currentPrivileges = GetCurrentManagedPrivileges(player);
+            if (currentPrivileges.Count == 0)
             {
                 return;
             }
 
-            defaultRoleResetter.Reset(player);
+            foreach (string privilege in currentPrivileges)
+            {
+                privilegeMutator.Revoke(player, privilege);
+            }
         }
 
         private bool IsConfiguredForRoleSync()
@@ -104,28 +107,37 @@ namespace FirstStepsTweaks.Services
                 && !string.IsNullOrWhiteSpace(config.GuildId);
         }
 
-        private void ApplyPlan(IServerPlayer player, DiscordDonatorRolePlan plan)
+        private void ApplyPlan(IServerPlayer player, DiscordDonatorPrivilegePlan plan)
         {
-            string currentRoleCode = roleCodeReader.Read(player);
+            HashSet<string> currentPrivileges = new HashSet<string>(GetCurrentManagedPrivileges(player), StringComparer.OrdinalIgnoreCase);
+            HashSet<string> targetPrivileges = new HashSet<string>(plan.TargetPrivileges ?? Array.Empty<string>(), StringComparer.OrdinalIgnoreCase);
+            bool changed = false;
 
-            if (string.IsNullOrWhiteSpace(plan.TargetRoleCode))
+            foreach (string privilege in currentPrivileges)
             {
-                string defaultRoleCode = defaultRoleResetter.GetDefaultRoleCode();
-                if (string.Equals(currentRoleCode, defaultRoleCode, StringComparison.OrdinalIgnoreCase))
+                if (targetPrivileges.Contains(privilege))
                 {
-                    return;
+                    continue;
                 }
 
-                defaultRoleResetter.Reset(player);
+                privilegeMutator.Revoke(player, privilege);
+                changed = true;
             }
-            else
+
+            foreach (string privilege in targetPrivileges)
             {
-                if (string.Equals(currentRoleCode, plan.TargetRoleCode, StringComparison.OrdinalIgnoreCase))
+                if (currentPrivileges.Contains(privilege))
                 {
-                    return;
+                    continue;
                 }
 
-                roleAssigner.Assign(player, plan.TargetRoleCode);
+                privilegeMutator.Grant(player, privilege);
+                changed = true;
+            }
+
+            if (!changed)
+            {
+                return;
             }
 
             messenger.SendInfo(
@@ -133,6 +145,13 @@ namespace FirstStepsTweaks.Services
                 "Discord donator role synced.",
                 GlobalConstants.InfoLogChatGroup,
                 (int)EnumChatType.Notification);
+        }
+
+        private IReadOnlyCollection<string> GetCurrentManagedPrivileges(IServerPlayer player)
+        {
+            return privilegeCatalog.GetAllPrivileges()
+                .Where(privilege => privilegeReader.HasPrivilege(player, privilege))
+                .ToArray();
         }
     }
 }

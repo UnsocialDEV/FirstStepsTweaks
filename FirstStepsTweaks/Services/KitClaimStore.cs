@@ -6,7 +6,6 @@ namespace FirstStepsTweaks.Services
     {
         private const string StarterKey = "fst_starterclaimed";
         private const string WinterKey = "fst_winterclaimed";
-        private const string SupporterKey = "fst_supporterclaimed";
 
         public bool HasStarterClaim(IServerPlayer player)
         {
@@ -16,11 +15,6 @@ namespace FirstStepsTweaks.Services
         public bool HasWinterClaim(IServerPlayer player)
         {
             return player?.GetModdata(WinterKey) != null;
-        }
-
-        public bool HasSupporterClaim(IServerPlayer player)
-        {
-            return player?.GetModdata(SupporterKey) != null;
         }
 
         public void MarkStarterClaimed(IServerPlayer player)
@@ -33,11 +27,6 @@ namespace FirstStepsTweaks.Services
             player?.SetModdata(WinterKey, new byte[] { 1 });
         }
 
-        public void MarkSupporterClaimed(IServerPlayer player)
-        {
-            player?.SetModdata(SupporterKey, new byte[] { 1 });
-        }
-
         public void SetStarterClaimed(IServerPlayer player, bool value)
         {
             player?.SetModdata(StarterKey, value ? new byte[] { 1 } : null);
@@ -48,9 +37,5 @@ namespace FirstStepsTweaks.Services
             player?.SetModdata(WinterKey, value ? new byte[] { 1 } : null);
         }
 
-        public void SetSupporterClaimed(IServerPlayer player, bool value)
-        {
-            player?.SetModdata(SupporterKey, value ? new byte[] { 1 } : null);
-        }
     }
 }

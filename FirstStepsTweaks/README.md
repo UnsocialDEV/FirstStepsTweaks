@@ -10,8 +10,7 @@ FirstStepsTweaks is a server-side Vintage Story mod that groups together a set o
 - Join-time invulnerability handling
 - Land claim enter/exit notifications
 - Discord chat relay and `/discord`
-- Starter, winter, and supporter kits
-- Supporter-only recipe gating for the custom spear
+- Starter and winter kits
 - Gravestone creation, recovery, lookup, and admin tools
 - Utility commands such as `/wind`, `/whosonline`, `/heal`, `/feed`, and `/fsdebug`
 
@@ -32,8 +31,7 @@ At startup the mod does the following:
 1. Loads `firststepstweaks.json`, or migrates the legacy `FirstStepsTweaks.json` if it exists.
 2. Builds a shared `FeatureRuntime` object with reusable cross-feature dependencies.
 3. Registers privileges used by commands and gated features.
-4. Hooks the recipe check that restricts the supporter spear to players with the supporter privilege.
-5. Registers feature modules:
+4. Registers feature modules:
    - `JoinFeature`
    - `TeleportFeature`
    - `DiscordFeature`
@@ -240,7 +238,7 @@ Used for shared server state that must survive restarts. Examples:
 Used for player-scoped persistent state. Examples:
 
 - named home positions with legacy single-home migration
-- starter/winter/supporter kit claims
+- starter/winter kit claims
 - join history and last seen day
 - TPA enable/disable preference
 
@@ -290,6 +288,8 @@ Privileges used for donor chat prefixes:
 - `firststepstweaks.sponsor`
 - `firststepstweaks.patron`
 - `firststepstweaks.founder`
+
+Discord donor sync manages those donor privileges directly. It does not replace the player's base game role, so admin and other custom roles remain intact.
 
 When adding config:
 

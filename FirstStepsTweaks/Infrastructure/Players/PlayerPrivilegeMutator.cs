@@ -6,7 +6,7 @@ using Vintagestory.API.Server;
 
 namespace FirstStepsTweaks.Infrastructure.Players
 {
-    public sealed class PlayerPrivilegeMutator
+    public sealed class PlayerPrivilegeMutator : IPlayerPrivilegeMutator
     {
         private readonly ICoreServerAPI api;
 

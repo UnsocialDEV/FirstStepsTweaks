@@ -51,15 +51,6 @@ namespace FirstStepsTweaks.Commands
                     .HandleWith(WinterKit);
             }
 
-            if (kitConfig.EnableSupporterKit)
-            {
-                api.ChatCommands
-                    .Create("supporterkit")
-                    .WithDescription("Gives supporter thank-you kit")
-                    .RequiresPlayer()
-                    .RequiresPrivilege("firststepstweaks.supporterkit")
-                    .HandleWith(SupporterKit);
-            }
         }
 
         private TextCommandResult StarterKit(TextCommandCallingArgs args)
@@ -91,22 +82,6 @@ namespace FirstStepsTweaks.Commands
             GiveConfiguredItems(player, kitConfig.WinterItems);
             claimStore.MarkWinterClaimed(player);
             messenger.SendDual(player, "You have received your winter kit!", (int)EnumChatType.CommandSuccess, (int)EnumChatType.Notification);
-            return TextCommandResult.Success();
-        }
-
-        private TextCommandResult SupporterKit(TextCommandCallingArgs args)
-        {
-            IServerPlayer player = (IServerPlayer)args.Caller.Player;
-
-            if (claimStore.HasSupporterClaim(player))
-            {
-                messenger.SendDual(player, "You have already claimed your Supporter kit.", (int)EnumChatType.CommandError, (int)EnumChatType.Notification);
-                return TextCommandResult.Success();
-            }
-
-            GiveConfiguredItems(player, kitConfig.SupporterItems);
-            claimStore.MarkSupporterClaimed(player);
-            messenger.SendDual(player, "You have received your Supporter kit!", (int)EnumChatType.CommandSuccess, (int)EnumChatType.Notification);
             return TextCommandResult.Success();
         }
 

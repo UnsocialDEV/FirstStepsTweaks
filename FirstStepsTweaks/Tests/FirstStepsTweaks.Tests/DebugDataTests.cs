@@ -25,7 +25,6 @@ public class DebugDataTests
         joinStore.SetLastSeenDay(player, 42.5);
         kitStore.SetStarterClaimed(player, true);
         kitStore.SetWinterClaimed(player, false);
-        kitStore.SetSupporterClaimed(player, true);
         playtimeStore.SetTotalPlayedSeconds(player, 120);
         homeStore.Set(player, "base", 1, 2, 3);
 
@@ -33,21 +32,18 @@ public class DebugDataTests
         Assert.Equal(42.5, joinStore.GetLastSeenTotalDays(player));
         Assert.True(kitStore.HasStarterClaim(player));
         Assert.False(kitStore.HasWinterClaim(player));
-        Assert.True(kitStore.HasSupporterClaim(player));
         Assert.Equal(120, playtimeStore.GetTotalPlayedSeconds(player));
         Assert.True(homeStore.Contains(player, "base"));
 
         joinStore.SetFirstJoinRecorded(player, false);
         joinStore.SetLastSeenDay(player, null);
         kitStore.SetStarterClaimed(player, false);
-        kitStore.SetSupporterClaimed(player, false);
         playtimeStore.ResetTotalPlayedSeconds(player);
         homeStore.Clear(player);
 
         Assert.False(joinStore.HasJoinedBefore(player));
         Assert.Null(joinStore.GetLastSeenTotalDays(player));
         Assert.False(kitStore.HasStarterClaim(player));
-        Assert.False(kitStore.HasSupporterClaim(player));
         Assert.Equal(0, playtimeStore.GetTotalPlayedSeconds(player));
         Assert.Empty(homeStore.GetAll(player));
     }

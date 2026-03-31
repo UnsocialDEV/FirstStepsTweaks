@@ -98,7 +98,6 @@ namespace FirstStepsTweaks.Config
     {
         public bool EnableStarterKit { get; set; } = true;
         public bool EnableWinterKit { get; set; } = true;
-        public bool EnableSupporterKit { get; set; } = true;
         public List<KitItemConfig> StarterItems { get; set; } = new List<KitItemConfig>
         {
             new KitItemConfig("game:flint", 6),
@@ -115,11 +114,6 @@ namespace FirstStepsTweaks.Config
             new KitItemConfig("game:clothes-foot-knee-high-fur-boots", 1),
             new KitItemConfig("game:clothes-hand-fur-gloves", 1),
             new KitItemConfig("game:redmeat-cooked", 12)
-        };
-
-        public List<KitItemConfig> SupporterItems { get; set; } = new List<KitItemConfig>
-        {
-            new KitItemConfig("firststepstweaks:supporter-spear", 1)
         };
     }
 

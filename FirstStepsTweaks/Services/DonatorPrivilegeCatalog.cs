@@ -9,11 +9,11 @@ namespace FirstStepsTweaks.Services
         private static readonly IReadOnlyList<DonatorPrivilegeDefinition> Definitions =
             new[]
             {
-                new DonatorPrivilegeDefinition(DonatorTier.Founder, "Founder", "founder", "firststepstweaks.founder", "founder"),
-                new DonatorPrivilegeDefinition(DonatorTier.Patron, "Patron", "patron", "firststepstweaks.patron", "patron"),
-                new DonatorPrivilegeDefinition(DonatorTier.Sponsor, "Sponsor", "sponsor", "firststepstweaks.sponsor", "sponsor"),
-                new DonatorPrivilegeDefinition(DonatorTier.Contributor, "Contributor", "contributor", "firststepstweaks.contributor", "contributor"),
-                new DonatorPrivilegeDefinition(DonatorTier.Supporter, "Supporter", "supporter", "firststepstweaks.supporter", "supporter")
+                new DonatorPrivilegeDefinition(DonatorTier.Founder, "Founder", "founder", "firststepstweaks.founder"),
+                new DonatorPrivilegeDefinition(DonatorTier.Patron, "Patron", "patron", "firststepstweaks.patron"),
+                new DonatorPrivilegeDefinition(DonatorTier.Sponsor, "Sponsor", "sponsor", "firststepstweaks.sponsor"),
+                new DonatorPrivilegeDefinition(DonatorTier.Contributor, "Contributor", "contributor", "firststepstweaks.contributor"),
+                new DonatorPrivilegeDefinition(DonatorTier.Supporter, "Supporter", "supporter", "firststepstweaks.supporter")
             };
 
         public IReadOnlyList<DonatorPrivilegeDefinition> GetAll()
@@ -24,11 +24,6 @@ namespace FirstStepsTweaks.Services
         public IReadOnlyCollection<string> GetAllPrivileges()
         {
             return Definitions.Select(definition => definition.Privilege).ToArray();
-        }
-
-        public IReadOnlyCollection<string> GetAllRoleCodes()
-        {
-            return Definitions.Select(definition => definition.InGameRoleCode).ToArray();
         }
 
         public DonatorPrivilegeDefinition FindByPrivilege(string privilege)
