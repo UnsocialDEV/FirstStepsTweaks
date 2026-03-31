@@ -1,18 +1,20 @@
 # FirstStepsTweaks
 
-FirstStepsTweaks is a server-side Vintage Story mod that groups together a set of practical multiplayer quality-of-life features for a server. The codebase is organized around feature modules, small focused services, and thin command handlers instead of one large mod class.
+FirstStepsTweaks is a server-side Vintage Story mod that bundles practical multiplayer quality-of-life systems into a single mod while keeping the code split into small focused features, commands, stores, and services.
 
-## What the mod includes
+The current runtime is centered on a small [`FirstStepsTweak.cs`](C:\Users\daytonwatson\source\repos\FirstStepsTweaks\FirstStepsTweaks\FirstStepsTweak.cs) entry point that loads config, registers privileges, builds shared runtime dependencies, and wires feature modules.
 
-- Teleport quality-of-life commands: `/back`, `/homes`, `/home [name]`, `/sethome [name]`, `/delhome <name>`, `/spawn`, `/setspawn`, `/warp`, `/warps`, `/setwarp`, `/delwarp`, `/rtp`, `/tpa`, `/tpaccept`, `/tpadeny`, `/tpacancel`, `/tpatoggle`
-- Join and return messages
-- Donator chat prefixes with tier precedence
+## What the mod currently includes
+
+- Teleport commands: `/back`, `/sethome`, `/home`, `/delhome`, `/homes`, `/setspawn`, `/spawn`, `/setwarp`, `/warp`, `/warps`, `/delwarp`, `/rtp`, `/tpa`, `/tpaccept`, `/tpadeny`, `/tpacancel`, `/tpatoggle`
+- Emergency / location recovery commands: `/setstormshelter`, `/stormshelter`, `/stuck`
+- Join and return messaging
 - Join-time invulnerability handling
-- Land claim enter/exit notifications
-- Discord chat relay and `/discord`
+- Donator chat prefixes
+- Discord invite command, Discord chat relay, Discord account linking, and Discord-driven donator privilege sync
 - Starter and winter kits
-- Gravestone creation, recovery, lookup, and admin tools
-- Utility commands such as `/wind`, `/whosonline`, `/heal`, `/feed`, and `/fsdebug`
+- Gravestones, grave recovery, grave lookup, and grave admin commands
+- Utility commands such as `/whosonline`, `/wind`, `/heal`, `/feed`, and `/fsdebug`
 
 ## Tech stack
 
@@ -20,119 +22,223 @@ FirstStepsTweaks is a server-side Vintage Story mod that groups together a set o
 - .NET 8
 - Vintage Story server mod API
 - xUnit for unit tests
-- PowerShell packaging script for publish output zip generation
+- PowerShell packaging script for creating the final mod zip
 
 ## Runtime overview
 
-The server entry point is [`FirstStepsTweak.cs`](./FirstStepsTweak.cs), which contains the `FirstStepsTweaks : ModSystem` class.
+The server entry point is [`FirstStepsTweak.cs`](C:\Users\daytonwatson\source\repos\FirstStepsTweaks\FirstStepsTweaks\FirstStepsTweak.cs), which contains the `FirstStepsTweaks : ModSystem` class.
 
 At startup the mod does the following:
 
-1. Loads `firststepstweaks.json`, or migrates the legacy `FirstStepsTweaks.json` if it exists.
-2. Builds a shared `FeatureRuntime` object with reusable cross-feature dependencies.
-3. Registers privileges used by commands and gated features.
-4. Registers feature modules:
+1. Loads `firststepstweaks.json`.
+2. Falls back to the legacy `FirstStepsTweaks.json` name and migrates it to `firststepstweaks.json` when needed.
+3. Applies config upgrades through `JoinConfigUpgrader` and `TeleportConfigUpgrader`.
+4. Builds a shared `FeatureRuntime` with cross-feature services such as player messaging, player lookup, back-location tracking, teleport warmups, land claim access, gravestone services, and Discord link rewards.
+5. Registers privileges used by commands and donor features.
+6. Registers feature modules in this order:
    - `JoinFeature`
    - `TeleportFeature`
+   - `ChatFeature`
    - `DiscordFeature`
    - `UtilityFeature`
-   - `GravestoneFeature` when gravestones are enabled
+   - `GravestoneFeature` when `Features.EnableCorpseService` is enabled
 
-This keeps the entry point small and makes each feature responsible for its own event wiring and command registration.
+Registered privileges currently include:
+
+- `firststepstweaks.back`
+- `firststepstweaks.supporter`
+- `firststepstweaks.contributor`
+- `firststepstweaks.sponsor`
+- `firststepstweaks.patron`
+- `firststepstweaks.founder`
+- `firststepstweaks.graveadmin`
+- `firststepstweaks.bypassteleportcooldown`
+
+## Feature map
+
+| Feature | Main entry point | Active behavior |
+|---|---|---|
+| Join | `JoinFeature` | Join broadcasts, return messaging, join invulnerability, Discord link reward claim-on-join flow |
+| Teleport | `TeleportFeature` | Back, homes, spawn, storm shelter, stuck escape, warps, RTP, and TPA |
+| Chat | `ChatFeature` | Donator chat prefix application on player chat |
+| Discord | `DiscordFeature` | Discord relay, `/discord`, `/discordlink`, `/discordunlink`, Discord link polling, avatar enrichment, and donor privilege synchronization |
+| Utility | `UtilityFeature` | Kits, `/whosonline`, `/wind`, `/heal`, `/feed`, and `/fsdebug` |
+| Gravestone | `GravestoneFeature` | `/whereismygrave` plus `/graveadmin` when corpse features are enabled |
+
+## Command surface
+
+### Teleport and movement
+
+- `/back`
+- `/sethome [name]`
+- `/home [name]`
+- `/delhome <name>`
+- `/homes`
+- `/setspawn`
+- `/spawn`
+- `/setwarp <name>`
+- `/warp <name>`
+- `/warps`
+- `/delwarp <name>`
+- `/rtp`
+- `/tpa <player>`
+- `/tpaccept`
+- `/tpadeny`
+- `/tpacancel`
+- `/tpatoggle`
+- `/setstormshelter`
+- `/stormshelter`
+- `/stuck`
+
+### Discord
+
+- `/discord`
+- `/discordlink`
+- `/discordunlink`
+
+`/discord` is controlled by `Features.EnableDiscordCommand`. Discord linking commands are registered by `DiscordFeature` regardless of the `/discord` invite toggle because they are part of the account-link flow rather than the invite message command.
+
+### Kits and utility
+
+- `/starterkit`
+- `/winterkit`
+- `/whosonline`
+- `/wind`
+- `/heal`
+- `/feed`
+
+### Gravestones
+
+- `/whereismygrave`
+- `/graveadmin list`
+- `/graveadmin giveblock <player> [quantity]`
+- `/graveadmin dupeitems <graveId|currentloc> <player>`
+- `/graveadmin restore <graveId|currentloc> <player>`
+- `/graveadmin remove <graveId|currentloc>`
+- `/graveadmin teleport <graveId|currentloc>`
+
+`/graveadmin` requires `firststepstweaks.graveadmin` and is only registered when both corpse features and corpse admin commands are enabled.
+
+### Debug
+
+`/fsdebug` is an admin-only debug surface for stored state inspection and repair. Current subcommand areas include:
+
+- `chattypes`
+- `player`
+- `spawn`
+- `warps`
+- `graves`
+- `discord`
+
+The debug surface includes player data inspection, home manipulation, playtime/join state edits, TPA preference edits, warp/spawn/grave inspection, and Discord link / reward / cursor state inspection.
 
 ## Repository structure
 
 ```text
 FirstStepsTweaks/
-|-- FirstStepsTweak.cs                 # ModSystem entry point and feature bootstrap
-|-- FirstStepsTweaks.csproj            # Main mod project
-|-- FirstStepsTweaks.sln               # Solution file
-|-- modinfo.json                       # Vintage Story mod metadata
-|-- README.md                          # Project documentation
+|-- FirstStepsTweak.cs
+|-- FirstStepsTweaks.csproj
+|-- FirstStepsTweaks.sln
+|-- modinfo.json
+|-- README.md
 |
-|-- assets/                            # Game assets copied into the final mod zip
+|-- assets/
 |   `-- firststepstweaks/
 |       |-- blocktypes/
-|       |-- itemtypes/
-|       |-- lang/
-|       `-- recipes/
+|       `-- lang/
 |
-|-- Commands/                          # Chat command endpoints and command-specific orchestration
+|-- Commands/
 |   |-- BackCommands.cs
 |   |-- HomeCommands.cs
 |   |-- SpawnCommands.cs
+|   |-- StormShelterCommands.cs
+|   |-- StuckCommand.cs
 |   |-- WarpCommands.cs
 |   |-- RtpCommands.cs
 |   |-- TpaCommands.cs
 |   |-- KitCommands.cs
 |   |-- DiscordCommands.cs
+|   |-- DiscordLinkCommands.cs
 |   |-- GravestoneCommands.cs
 |   |-- WhereIsMyGraveCommand.cs
 |   |-- WhosOnlineCommand.cs
 |   |-- WindCommand.cs
 |   |-- AdminVitalsCommands.cs
-|   `-- DebugCommands.cs
+|   `-- Debug*.cs
 |
-|-- Config/                            # Strongly typed config models and feature toggles
+|-- Config/
 |   `-- FirstStepsTweaksConfig.cs
 |
-|-- Features/                          # Feature composition root layer
-|   |-- IFeatureModule.cs
-|   |-- FeatureRuntime.cs
-|   |-- JoinFeature.cs
-|   |-- TeleportFeature.cs
-|   |-- DiscordFeature.cs
-|   |-- UtilityFeature.cs
-|   `-- GravestoneFeature.cs
-|
-|-- Discord/                           # Discord-specific integration
+|-- Discord/
 |   |-- DiscordBridge.cs
-|   |-- DiscordBridgeConfig.cs
 |   |-- DiscordConfigStore.cs
-|   |-- DiscordLastMessageStore.cs
+|   |-- DiscordLinkPoller.cs
+|   |-- DiscordLinkService.cs
+|   |-- DiscordLinkedAccountStore.cs
+|   |-- DiscordLinkRewardService.cs
+|   |-- DiscordPlayerAvatarService.cs
 |   |-- Messaging/
 |   `-- Transport/
 |
-|-- Gravestones/                       # Gravestone sub-components with narrow responsibilities
+|-- Economy/
+|   `-- (reserved for economy-related code; currently empty in this repo snapshot)
+|
+|-- Features/
+|   |-- ChatFeature.cs
+|   |-- DiscordFeature.cs
+|   |-- FeatureRuntime.cs
+|   |-- GravestoneFeature.cs
+|   |-- IFeatureModule.cs
+|   |-- JoinFeature.cs
+|   |-- TeleportFeature.cs
+|   `-- UtilityFeature.cs
+|
+|-- Gravestones/
 |   |-- GraveBlockSynchronizer.cs
 |   |-- GraveClaimPolicy.cs
 |   |-- GraveInventoryRestorer.cs
 |   |-- GraveInventorySnapshotter.cs
 |   `-- GravePlacementService.cs
 |
-|-- Infrastructure/                    # Wrappers around game API and low-level adapters
+|-- Infrastructure/
 |   |-- LandClaims/
 |   |-- Messaging/
 |   |-- Players/
 |   `-- Teleport/
 |
-|-- Services/                          # Feature workflows, business rules, repositories, formatters
+|-- Services/
+|   |-- DonatorChatPrefixApplicator.cs
 |   |-- GravestoneService.cs
-|   |-- GraveManager.cs
+|   |-- HomeAccessPolicy.cs
+|   |-- HomeSlotPolicy.cs
 |   |-- JoinService.cs
 |   |-- JoinInvulnerabilityService.cs
 |   |-- JoinMessageFormatter.cs
-|   |-- LandClaimNotificationService.cs
-|   |-- LandClaimMessageFormatter.cs
-|   |-- ItemService.cs
 |   |-- KitClaimStore.cs
 |   |-- KitItemConsolidator.cs
+|   |-- LandClaimEscapeService.cs
+|   |-- LandClaimNotificationService.cs
+|   |-- PlayerDonatorRoleSyncService.cs
+|   |-- PlayerHomeLimitResolver.cs
+|   |-- PlayerPlaytimeStore.cs
+|   |-- PlayerTeleportWarmupResolver.cs
+|   |-- StormShelterTeleportService.cs
 |   `-- TeleportBypass.cs
 |
-|-- Teleport/                          # Teleport persistence and request state
+|-- Teleport/
 |   |-- HomeStore.cs
-|   |-- SpawnStore.cs
-|   |-- WarpStore.cs
 |   |-- RtpCooldownStore.cs
+|   |-- SpawnStore.cs
+|   |-- StormShelterStore.cs
 |   |-- TpaPreferenceStore.cs
 |   |-- TpaRequestStore.cs
-|   `-- TpaRequestRecord.cs
+|   `-- WarpStore.cs
 |
-|-- scripts/                           # Build and packaging scripts
+|-- scripts/
 |   `-- CreateModZip.ps1
 |
 `-- Tests/
-    `-- FirstStepsTweaks.Tests/        # xUnit test project for pure logic and policies
+    `-- FirstStepsTweaks.Tests/
 ```
 
 ## Layer responsibilities
@@ -141,78 +247,62 @@ FirstStepsTweaks/
 
 Feature modules are the composition root for a functional area. A feature should:
 
-- instantiate the services and commands it needs
-- wire event handlers
+- instantiate the small collaborators it needs
+- wire event handlers and command registration
 - respect feature toggles from config
 
-A feature should not become the place where business rules live.
+Feature modules should not become hidden business-logic containers.
 
 ### `Commands/`
 
-Command classes are the public command surface for players and admins. They should:
+Command classes are the public player and admin surface. They should:
 
 - register chat commands
-- validate command input
-- delegate real work to services, stores, or helpers
-- format command success/error responses
+- validate user input
+- delegate work to services, policies, stores, or helpers
+- return player-facing responses
 
-They should stay thin. If command logic becomes reusable or non-trivial, move it into a service or policy class.
+If a command starts owning reusable rules, split that rule into a focused collaborator.
 
 ### `Services/`
 
-Services own gameplay workflows and business behavior. Good examples in this repository:
+Services and policy-style classes own gameplay workflows and rules. Current examples include:
 
-- `JoinService` for join/return message flow
-- `LandClaimNotificationService` for land-claim transition behavior
-- `GravestoneService` for higher-level gravestone orchestration
-- `KitItemConsolidator` and formatter classes for pure logic that can be tested independently
-
-### `Gravestones/`
-
-This folder breaks the gravestone system into smaller roles instead of letting `GravestoneService` do everything itself. Examples:
-
-- placement
-- claim policy
-- inventory snapshotting
-- inventory restoration
-- block synchronization
-
-That split is the preferred direction for feature-heavy code throughout this repository.
-
-### `Infrastructure/`
-
-Infrastructure classes adapt the Vintage Story API or external boundaries into shapes the rest of the mod can use. Examples:
-
-- player lookup
-- player messaging
-- land claim access through reflection
-- teleport warmup timer handling
-
-If a class mostly exists because the game API or an external dependency is awkward, it belongs here.
+- `JoinService`
+- `PlayerDonatorRoleSyncService`
+- `LandClaimEscapeService`
+- `StormShelterTeleportService`
+- `HomeAccessPolicy`
+- `HomeSlotPolicy`
+- `KitItemConsolidator`
 
 ### `Teleport/`
 
-This folder contains teleport state and storage types. Keep it focused on persistence and request state, not on command wiring or message formatting.
+Keep teleport persistence and request state here:
+
+- homes
+- warps
+- spawn data
+- storm shelter state
+- RTP cooldowns
+- TPA preferences and pending requests
+
+This folder should stay focused on storage and simple serialization concerns, not command registration.
 
 ### `Discord/`
 
-Discord integration is isolated from the rest of the mod:
+Discord-only integration is isolated here:
 
-- config loading lives in config store classes
-- transport code lives under `Transport/`
-- translation/parsing lives under `Messaging/`
-- the bridge coordinates the end-to-end Discord relay flow
+- relay configuration and validation
+- webhook transport
+- message normalization and translation
+- account-link state and polling
+- Discord role lookup and privilege synchronization
+- avatar/profile enrichment
 
-## Current feature map
+### `Infrastructure/`
 
-| Feature | Main entry point | Main responsibilities |
-|---|---|---|
-| Join | `JoinFeature` | Join broadcasts, return messaging, join invulnerability, land claim notifications |
-| Chat | `ChatFeature` | Donator chat prefix formatting and chat event wiring |
-| Teleport | `TeleportFeature` | Back/home/spawn/warp/rtp/tpa commands, warmups, request and cooldown state |
-| Discord | `DiscordFeature` | Game-to-Discord relay, Discord-to-game relay, Discord invite command |
-| Utility | `UtilityFeature` | Kits, online listing, wind reporting, admin heal/feed, debug helpers |
-| Gravestone | `GravestoneFeature` | Item snapshot/recovery, grave placement, claim policy, grave admin commands |
+Infrastructure adapts awkward game API or external boundaries into smaller shapes the rest of the mod can use, such as player lookup, player messaging, teleport warmups, and land claim access.
 
 ## Persistence model
 
@@ -221,59 +311,156 @@ The project uses more than one storage style. Keep new data in the narrowest pla
 ### Config files
 
 - `firststepstweaks.json` for main mod config
-- `firststepstweaks.discord.json` for Discord relay config
-- legacy config file names are migrated automatically
+- `firststepstweaks.discord.json` for Discord relay and link config
+- `FirstStepsTweaks.json` is migrated automatically to the lowercase main config name when found
 
 ### World save data
 
-Used for shared server state that must survive restarts. Examples:
+Used for shared server state that must survive restarts. Current examples include:
 
 - gravestones
-- warp definitions
+- warps
 - spawn position
-- Discord last processed message id
+- storm shelter position
+- Discord relay cursor
+- Discord link cursor
+- linked Discord accounts
+- Discord reward claim state
 
-### Player moddata
+### Player-scoped persisted data
 
-Used for player-scoped persistent state. Examples:
+Used for state tied to a specific player. Current examples include:
 
-- named home positions with legacy single-home migration
-- starter/winter kit claims
+- homes
+- starter and winter kit claim flags
 - join history and last seen day
-- TPA enable/disable preference
+- accumulated playtime
+- TPA preference
 
 ### In-memory runtime state
 
-Used for temporary state that does not need to survive a restart. Examples:
+Used for temporary state that does not need to survive restart. Current examples include:
 
-- `/back` last-location cache
-- RTP cooldown tracking
-- pending TPA requests
+- `/back` locations
 - active teleport warmups
+- pending TPA requests
+- RTP cooldown cache when implemented as runtime store
 
 ## Configuration overview
 
-The main config object is `FirstStepsTweaksConfig`. Major sections are:
+The main config object is `FirstStepsTweaksConfig` in [`Config/FirstStepsTweaksConfig.cs`](C:\Users\daytonwatson\source\repos\FirstStepsTweaks\FirstStepsTweaks\Config\FirstStepsTweaksConfig.cs).
 
-- `Features`: feature toggles and high-level enable flags
-- `Chat`: donor chat prefix toggle and prefix format
-- `Teleport`: warmup timing, movement cancel threshold, TPA expiration, and per-tier home limits
-- `Rtp`: radius, attempts, cooldown, center selection
-- `Join`: first-join and returning-player message templates
-- `DiscordCommand`: text for the `/discord` command
-- `Kits`: enabled kits and item lists
-- `Utility`: wind thresholds and admin name list
-- `Corpse`: gravestone settings
-- `LandClaims`: enter/exit notification settings
+### `Features`
 
-## Donator chat prefixes
+Feature toggles currently include:
 
-Donator chat prefixes are controlled by the `Chat` config section:
+- `EnableDebugCommand`
+- `EnableDiscordCommand`
+- `EnableSpawnCommands`
+- `EnableStormShelterCommands`
+- `EnableStuckCommand`
+- `EnableBackCommand`
+- `EnableHomeCommands`
+- `EnableKitCommands`
+- `EnableTpaCommands`
+- `EnableWarpCommands`
+- `EnableRtpCommand`
+- `EnableUtilityCommands`
+- `EnableCorpseService`
+- `EnableCorpseAdminCommands`
+- `EnableJoinBroadcasts`
+- `EnableLandClaimNotifications`
 
-- `EnableDonatorPrefixes`: enables the in-game donor prefix hook
-- `DonatorPrefixFormat`: prefix template, defaulting to `[{tier}]`
+### `Chat`
 
-Tier precedence is:
+Donator chat settings include:
+
+- `EnableDonatorPrefixes`
+- `DonatorPrefixFormat`
+- `SupporterPrefix`
+- `ContributorPrefix`
+- `SponsorPrefix`
+- `PatronPrefix`
+- `FounderPrefix`
+
+The current default format is `{tier}` and the per-tier defaults are:
+
+- Supporter: `•S`
+- Contributor: `•C`
+- Sponsor: `•SP`
+- Patron: `•P`
+- Founder: `•F`
+
+### `Teleport`
+
+Teleport settings include:
+
+- `WarmupSeconds` default `10`
+- `DonatorWarmupSeconds` nullable override for donor-tier warmup reduction
+- `CancelMoveThreshold` default `0.1`
+- `TickIntervalMs` default `1000`
+- `TpaExpireMs` default `180000`
+- `HomeLimits` for `Default`, `Supporter`, `Contributor`, `Sponsor`, `Patron`, and `Founder`
+
+`TeleportConfigUpgrader` upgrades older configs that do not yet have the current donor warmup shape.
+
+### `Rtp`
+
+RTP settings include:
+
+- `MinRadius` default `256`
+- `MaxRadius` default `2048`
+- `MaxAttempts` default `24`
+- `CooldownSeconds` default `300`
+- `UsePlayerPositionAsCenter` default `true`
+- `UseWarmup` default `true`
+
+### `Join`
+
+Join message settings include:
+
+- `FirstJoinMessage`
+- `ReturningJoinMessage`
+
+`JoinConfigUpgrader` upgrades older returning join messages to the current default that includes playtime.
+
+### `DiscordCommand`
+
+- `InviteMessage`
+
+### `Kits`
+
+- `EnableStarterKit`
+- `EnableWinterKit`
+- `StarterItems`
+- `WinterItems`
+
+### `Utility`
+
+- `HurricaneThreshold`
+- `StormThreshold`
+- `StrongWindThreshold`
+- `BreezyThreshold`
+- `AdminPlayerNames`
+
+### `Corpse`
+
+- `GraveBlockCode`
+- `DropCleanupTickMs`
+- `EnforceGraveTickMs`
+- `GraveExpireMs`
+- `GraveCleanupTickMs`
+- `GraveCleanupInGameDays`
+
+### `LandClaims`
+
+- `TickIntervalMs`
+- `EnterMessage`
+- `ExitMessage`
+
+## Donator tiers and chat prefixes
+
+Current donor tier precedence is:
 
 - `Founder`
 - `Patron`
@@ -281,7 +468,7 @@ Tier precedence is:
 - `Contributor`
 - `Supporter`
 
-Privileges used for donor chat prefixes:
+The related privileges are:
 
 - `firststepstweaks.supporter`
 - `firststepstweaks.contributor`
@@ -289,40 +476,68 @@ Privileges used for donor chat prefixes:
 - `firststepstweaks.patron`
 - `firststepstweaks.founder`
 
-Discord donor sync manages those donor privileges directly. It does not replace the player's base game role, so admin and other custom roles remain intact.
+`ChatFeature` applies donor prefixes on chat. `DiscordFeature` can also synchronize those donor privileges from Discord roles for linked accounts.
 
-When adding config:
+## Discord integration
 
-- add it to the correct section instead of dumping everything into one giant class
-- keep related values together
-- use sensible defaults so a missing setting does not break startup
-- add a feature toggle when the behavior is optional
+The current Discord system is broader than a simple chat webhook.
+
+### Relay
+
+- `DiscordBridge` listens to in-game chat and relays it through the configured Discord webhook/client flow.
+- Relay state uses a last-message cursor store so polling can resume across restarts.
+- Message normalization and translation are kept in dedicated Discord classes instead of inside the feature module.
+
+### Account linking
+
+- `/discordlink` generates a one-time code for the player.
+- Players complete the link by posting that code in the configured Discord link channel.
+- `DiscordLinkPoller` reads new link-channel messages, resolves codes, and stores the linked Discord account.
+- `/discordunlink` removes the linked account and clears synced donor privileges from that player.
+
+### Reward flow
+
+- First-time successful links are eligible for a reward.
+- Reward state is persisted so the grant is not duplicated.
+- `DiscordLinkRewardJoinHandler` finishes the reward claim flow when the linked player next joins / is now playing.
+
+### Donator sync and avatars
+
+- Linked players can have donor privileges synchronized from Discord guild roles.
+- `PlayerDonatorRoleSyncService` handles role inspection and privilege updates.
+- `DiscordPlayerAvatarService` and related profile clients provide avatar/profile enrichment for relay behavior where configured.
 
 ## Named homes
 
-Homes are now named and the command surface is:
+Homes are named and the command surface is:
 
 - `/homes`
 - `/sethome [name]`
 - `/home [name]`
 - `/delhome <name>`
 
-Home names are normalized case-insensitively. Existing legacy single-home player data is migrated automatically to the named home `home` the first time the player accesses homes.
+Home limits are resolved per player tier through `Teleport.HomeLimits`.
 
-If a player has no homes yet, bare `/sethome` creates a default home named `home`. Bare `/home` teleports to the `home` entry when present, otherwise it falls back to the player's oldest created home. `/homes` marks whichever home bare `/home` will use as `(default)`.
+The codebase contains focused home collaborators instead of one large home manager:
 
-If a player's donor tier is downgraded, extra homes are kept in storage but become inaccessible until the tier supports them again. `/homes` shows which homes are currently accessible and which are stored but locked by the current tier.
+- `HomeStore` for persistence
+- `DefaultHomeResolver` for default-home selection
+- `HomeSlotPolicy` for slot rules
+- `HomeAccessPolicy` for accessibility rules
+- `HomeDeletionTargetResolver` for delete targeting
+- `PlayerHomeLimitResolver` for tier-based limits
 
-Home limits are controlled by `Teleport.HomeLimits`:
+## Gravestones
 
-- `Default`
-- `Supporter`
-- `Contributor`
-- `Sponsor`
-- `Patron`
-- `Founder`
+The gravestone system is intentionally decomposed. The higher-level `GravestoneService` coordinates smaller components under [`Gravestones/`](C:\Users\daytonwatson\source\repos\FirstStepsTweaks\FirstStepsTweaks\Gravestones), including:
 
-Default config values increase by tier, but admins can customize each tier independently.
+- placement
+- claim policy
+- inventory snapshotting
+- inventory restoration
+- grave block synchronization
+
+Player-facing gravestone commands are intentionally separate from the storage and rule layers.
 
 ## Build and development
 
@@ -352,7 +567,7 @@ dotnet test .\Tests\FirstStepsTweaks.Tests\FirstStepsTweaks.Tests.csproj -p:Vint
 
 ### Packaging
 
-Packaging is opt-in and runs after `dotnet publish` by calling [`scripts/CreateModZip.ps1`](./scripts/CreateModZip.ps1).
+Packaging is opt-in and runs after `dotnet publish` by calling [`scripts/CreateModZip.ps1`](C:\Users\daytonwatson\source\repos\FirstStepsTweaks\FirstStepsTweaks\scripts\CreateModZip.ps1).
 
 Default output location:
 
@@ -379,97 +594,121 @@ dotnet build .\FirstStepsTweaks.csproj `
   -p:EnableModZipPackaging=false
 ```
 
-On non-Windows platforms, packaging requires `pwsh` to be available when `-p:EnableModZipPackaging=true` is used.
+On non-Windows platforms, packaging requires `pwsh` when `-p:EnableModZipPackaging=true` is used.
 
 ## Tests
 
-The test project currently focuses on logic that should stay deterministic and API-light:
+The test project covers the current extracted logic surface rather than only a few legacy units. Representative tests include:
 
-- `DiscordMessageTranslatorTests`
-- `GraveClaimPolicyTests`
+- `DefaultHomeResolverTests`
+- `HomeAccessPolicyTests`
+- `HomeSlotPolicyTests`
+- `HomeDeletionTargetResolverTests`
+- `PlayerHomeLimitResolverTests`
+- `PlayerTeleportWarmupResolverTests`
+- `StormShelterTests`
+- `DiscordBridgeTests`
+- `DiscordLinkServiceTests`
+- `DiscordLinkPollerTests`
+- `DiscordLinkRewardServiceTests`
+- `DiscordLinkRewardJoinHandlerTests`
+- `DiscordDonatorPrivilegePlannerTests`
+- `DiscordRelayConfigurationValidatorTests`
+- `DonatorChatMessageFormatterTests`
+- `DonatorChatPrefixApplicatorTests`
+- `DonatorTierResolverTests`
+- `JoinConfigUpgraderTests`
+- `TeleportConfigUpgraderTests`
 - `JoinMessageFormatterTests`
-- `KitItemConsolidatorTests`
+- `PlaytimeFormatterTests`
+- `LandClaimEscapePlannerTests`
+- `LandClaimEscapeServiceTests`
 - `LandClaimMessageFormatterTests`
+- `GraveClaimPolicyTests`
+- `KitItemConsolidatorTests`
 
-This is the preferred testing style for the repository:
+Preferred testing style in this repo:
 
-- keep pure rules in small classes
-- test formatters, translators, policies, and consolidators directly
-- avoid hiding complex logic inside command handlers where unit testing becomes harder
+- keep rules in small pure classes
+- test policies, formatters, translators, resolvers, planners, and consolidators directly
+- avoid burying complex logic inside command handlers
 
 ## Architecture rules
 
-These rules are the standard for new code in this repository.
+These are the repository standards for new code.
 
 ### 1. No god classes
 
-Do not create classes that register commands, manage storage, talk to the game API, format player messages, and implement business rules all at once.
+Do not create one class that registers commands, talks to the game API, stores data, formats messages, and owns gameplay rules.
 
 If a class starts doing multiple unrelated jobs, split it.
 
 ### 2. One function per class means one responsibility per class
 
-For this project, "classes must have 1 function" means one reason to exist and one reason to change. It does **not** mean a class may only contain one method.
+For this repository, "classes must have 1 function" means one reason to exist and one reason to change. It does not mean one method only.
 
-Good:
+Good examples in the current codebase:
 
-- `JoinMessageFormatter` formats join messages
-- `WarpStore` persists warp data
-- `TeleportWarmupService` manages timed teleport warmups
-- `GraveClaimPolicy` decides whether a grave can be claimed
+- `PlayerHomeLimitResolver`
+- `HomeAccessPolicy`
+- `DiscordLinkService`
+- `StormShelterTeleportService`
+- `DonatorChatPrefixApplicator`
+- `LandClaimEscapeService`
 
-Bad:
+Bad direction:
 
-- one large `TeleportManager` that stores homes, validates permissions, formats responses, handles warmups, and registers every teleport command
+- a single `TeleportManager` that stores homes, resolves limits, formats chat responses, manages warmups, and registers every teleport command
 
 ### 3. Commands stay thin
 
-Command classes should mostly do four things:
+Command classes should mostly:
 
 1. register the command
 2. validate input
 3. call the right collaborator
 4. return a player-facing response
 
-If a command needs reusable logic, extract a service, policy, formatter, or store.
+If command logic becomes reusable or non-trivial, extract a service, store, resolver, formatter, or policy.
 
 ### 4. Feature modules compose, they do not own domain logic
 
-`*Feature` classes should wire together dependencies and register handlers. They should not become a second command layer or a hidden business logic layer.
+`*Feature` classes should wire dependencies and handlers. They should not become a second domain layer.
 
-### 5. Put game API wrappers behind focused abstractions
+### 5. Separate persistence from behavior
 
-When the Vintage Story API is awkward, reflection-heavy, or hard to test, isolate it behind a small adapter interface.
+Persistent state belongs in store-style classes. Gameplay rules belong in services, policies, planners, or formatters.
 
-Examples already in the project:
+Examples:
+
+- `HomeStore`, `SpawnStore`, `WarpStore`, `StormShelterStore`
+- `KitClaimStore`
+- `DiscordLinkedAccountStore`
+- `PlayerDonatorRoleSyncService`
+- `LandClaimEscapePlanner`
+
+### 6. Put awkward engine access behind focused abstractions
+
+When the Vintage Story API is awkward, isolate it behind a smaller boundary.
+
+Examples already in the repo:
 
 - `ILandClaimAccessor`
 - `IPlayerMessenger`
 - `IPlayerLookup`
 - `ITeleportWarmupService`
 
-### 6. Separate persistence from behavior
-
-Persistent state belongs in a `Store` or repository-style class. Business behavior belongs in a service or policy class.
-
-Examples:
-
-- `WarpStore` stores warps
-- `KitClaimStore` stores player claim flags
-- `GraveManager` stores gravestone records
-
-Those classes should not also decide gameplay rules.
-
 ### 7. Prefer small pure classes for rules and formatting
 
-If a piece of logic can be made deterministic, make it deterministic and test it in isolation.
+If a piece of logic can be deterministic, make it deterministic and unit-test it.
 
-Preferred extraction targets:
+Preferred extraction targets include:
 
 - `*Formatter`
-- `*Translator`
+- `*Resolver`
 - `*Policy`
-- `*Consolidator`
+- `*Planner`
+- `*Translator`
 
 ### 8. Keep folder boundaries meaningful
 
@@ -477,62 +716,28 @@ Put code where it belongs:
 
 - command surface in `Commands/`
 - composition in `Features/`
-- gameplay workflows in `Services/`
-- external or engine adapters in `Infrastructure/`
-- persistence in `Teleport/` or other store-focused folders
+- gameplay workflows and rules in `Services/`
+- persistence in `Teleport/` or other store-focused areas
 - Discord-only code in `Discord/`
+- engine and boundary adapters in `Infrastructure/`
 
-Do not add "misc", "helpers", or catch-all folders unless there is a clear architectural reason.
+Do not add vague catch-all folders or utility blobs.
 
-### 9. Prefer additive extension over editing unrelated classes
+### 9. Prefer additive extension over bloating unrelated files
 
 When adding a feature:
 
-- add a new service instead of bloating an existing one
-- add a new command class instead of stuffing more commands into an unrelated command file
-- add a new feature module when the behavior is a distinct functional area
+- add a new focused collaborator instead of expanding an already broad class
+- add a new command class when the command surface is distinct
+- add or extend a feature module when the behavior is a separate runtime area
 
-### 10. Test the logic you extract
+### 10. Test extracted logic
 
-Every time you split a rule out of a command or service into a pure class, strongly prefer adding or extending unit tests.
+When a rule is split out of a command or service into a pure class, strongly prefer adding or extending unit tests for it.
 
-## Recommended workflow for adding a new feature
+## Known code and repo notes
 
-1. Add or extend config in `Config/` with sensible defaults.
-2. Create the smallest focused service, policy, formatter, or store classes needed.
-3. Add a new command class only if there is a player/admin command surface.
-4. Register the new behavior from a feature module.
-5. Wire the feature into `FirstStepsTweak.cs`.
-6. Add unit tests for pure logic.
-7. Update this README if the repository structure or architecture guidance changes.
-
-## Naming guidance
-
-Keep names explicit. Prefer names that reveal role:
-
-- `SomethingFeature`
-- `SomethingCommands`
-- `SomethingService`
-- `SomethingStore`
-- `SomethingFormatter`
-- `SomethingPolicy`
-- `IWhatever` for abstractions
-
-Avoid vague names such as:
-
-- `Manager`
-- `Helper`
-- `Utils`
-- `Processor`
-
-Use those only when the class truly matches the role and there is no more precise name.
-
-## Maintenance notes
-
-- Keep the startup path in `FirstStepsTweak.cs` small.
-- Keep feature toggles centralized in config.
-- Keep Discord-specific concerns out of unrelated gameplay classes.
-- Keep gravestone logic decomposed instead of growing one monolith.
-- Prefer new small collaborators over extending an already-large class.
-
-That architectural discipline matters more than saving a file or two. Small, single-purpose classes are the default design choice for this repository.
+- Document active behavior from feature registration and runtime wiring, not from class names alone.
+- `LandClaimNotificationService` self-registers its tick listener in its constructor. It is active when constructed by `JoinFeature` with `EnableLandClaimNotifications`, even though `JoinFeature.Register()` does not explicitly call a registration method on it.
+- The `Economy/` folder exists in this repo snapshot but is currently empty.
+- This README intentionally describes the current code and runtime behavior, not planned or partially started systems.
