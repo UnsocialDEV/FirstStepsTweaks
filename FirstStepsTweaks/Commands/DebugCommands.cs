@@ -1,4 +1,5 @@
 using FirstStepsTweaks.Discord;
+using FirstStepsTweaks.Infrastructure.Coordinates;
 using FirstStepsTweaks.Infrastructure.Messaging;
 using FirstStepsTweaks.Infrastructure.Players;
 using FirstStepsTweaks.Services;
@@ -30,11 +31,13 @@ namespace FirstStepsTweaks.Commands
             SpawnStore spawnStore,
             WarpStore warpStore,
             GravestoneService gravestoneService,
+            IWorldCoordinateDisplayFormatter coordinateDisplayFormatter,
             IDiscordLinkedAccountStore linkedAccountStore,
             IPendingDiscordLinkCodeStore pendingCodeStore,
             IDiscordLinkRewardStateStore rewardStateStore,
             IDiscordLastMessageStore relayCursorStore,
-            IDiscordLinkLastMessageStore linkCursorStore)
+            IDiscordLinkLastMessageStore linkCursorStore,
+            DiscordLinkPollerStatusTracker linkPollerStatusTracker)
         {
             this.api = api;
 
@@ -50,7 +53,8 @@ namespace FirstStepsTweaks.Commands
                 pendingCodeStore,
                 rewardStateStore,
                 relayCursorStore,
-                linkCursorStore);
+                linkCursorStore,
+                linkPollerStatusTracker);
 
             playerCommands = new PlayerDebugCommands(
                 playerLookup,
@@ -64,7 +68,7 @@ namespace FirstStepsTweaks.Commands
 
             spawnCommands = new SpawnDebugCommands(spawnStore, messenger);
             warpCommands = new WarpDebugCommands(warpStore, messenger);
-            graveCommands = new GraveDebugCommands(gravestoneService, messenger);
+            graveCommands = new GraveDebugCommands(gravestoneService, messenger, coordinateDisplayFormatter);
             discordCommands = new DiscordDebugCommands(
                 discordReader,
                 linkedAccountStore,

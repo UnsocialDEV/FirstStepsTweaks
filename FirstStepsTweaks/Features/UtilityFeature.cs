@@ -27,9 +27,9 @@ namespace FirstStepsTweaks.Features
                 var joinHistoryStore = new JoinHistoryStore();
                 var kitClaimStore = new KitClaimStore();
                 var playtimeStore = new PlayerPlaytimeStore();
-                var homeStore = new HomeStore();
+                var homeStore = new HomeStore(new HomeDataSerializer(), new HomeNameNormalizer(), new DefaultHomeResolver(), runtime.CoordinateReader);
                 var tpaPreferenceStore = new TpaPreferenceStore();
-                var spawnStore = new SpawnStore(api);
+                var spawnStore = new SpawnStore(api, runtime.CoordinateReader);
                 var warpStore = new WarpStore(api);
                 var linkedAccountStore = new DiscordLinkedAccountStore(api);
                 var pendingCodeStore = new PendingDiscordLinkCodeStore(api);
@@ -49,11 +49,13 @@ namespace FirstStepsTweaks.Features
                     spawnStore,
                     warpStore,
                     runtime.GravestoneService,
+                    runtime.CoordinateDisplayFormatter,
                     linkedAccountStore,
                     pendingCodeStore,
                     rewardStateStore,
                     relayCursorStore,
-                    linkCursorStore).Register();
+                    linkCursorStore,
+                    runtime.DiscordLinkPollerStatusTracker).Register();
             }
 
             if (config.Features.EnableKitCommands)
@@ -64,8 +66,9 @@ namespace FirstStepsTweaks.Features
             if (config.Features.EnableUtilityCommands)
             {
                 new WhosOnlineCommand(api, config).Register();
-                new WindCommand(api, config).Register();
+                new WindCommand(api, config, runtime.CoordinateReader).Register();
                 new AdminVitalsCommands(api).Register();
+                new AdminModeCommand(api, runtime.AdminModeService).Register();
             }
         }
     }

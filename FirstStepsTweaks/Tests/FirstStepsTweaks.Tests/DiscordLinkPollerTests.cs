@@ -1,9 +1,11 @@
 using System.Reflection;
+using System.Text.Json;
 using FirstStepsTweaks.Discord;
 using FirstStepsTweaks.Discord.Transport;
 using FirstStepsTweaks.Infrastructure.Messaging;
 using FirstStepsTweaks.Infrastructure.Players;
 using FirstStepsTweaks.Services;
+using Vintagestory.API.Common;
 using Vintagestory.API.Server;
 using Xunit;
 
@@ -123,6 +125,234 @@ public sealed class DiscordLinkPollerTests
         Assert.True(rewardStateStore.HasClaimed("player-1"));
     }
 
+    [Fact]
+    public async Task PollOnceAsync_WhenSavedCursorHasFullPageAndPartialSecondPage_ProcessesBothPages()
+    {
+        var statusTracker = new DiscordLinkPollerStatusTracker();
+        var (api, logger) = CreateApiWithLogger();
+        var webhookClient = new FakeDiscordWebhookClient(
+            new DiscordHttpResponse
+            {
+                StatusCode = 200,
+                Body = CreateMessagePageJson(Enumerable.Range(101, 100).Reverse().Select(index => (index.ToString(), index == 150 ? "ABC123" : "ignore", "discord-1", false)))
+            },
+            new DiscordHttpResponse
+            {
+                StatusCode = 200,
+                Body = CreateMessagePageJson(new[]
+                {
+                    ("201", "ignore", "discord-1", false),
+                    ("200", "ignore", "discord-1", false),
+                    ("199", "ignore", "discord-1", false)
+                })
+            });
+        var lastMessageStore = new FakeDiscordLinkLastMessageStore("100");
+        var linkedAccountStore = new FakeLinkedAccountStore();
+        var pendingCodeStore = new FakePendingDiscordLinkCodeStore();
+        pendingCodeStore.SaveCode("ABC123", new PendingDiscordLinkCodeRecord("player-1", DateTime.UtcNow.AddMinutes(10).Ticks));
+        var poller = CreatePoller(
+            webhookClient,
+            lastMessageStore,
+            linkedAccountStore,
+            pendingCodeStore,
+            new FakeDiscordLinkRewardStateStore(),
+            new FakeDiscordLinkRewardItemGiver(),
+            new FakePlayerLookup(CreatePlayer("player-1", "Ava")),
+            new FakePlayerMessenger(),
+            api: api,
+            statusTracker: statusTracker);
+
+        await InvokePollOnceAsync(poller);
+
+        Assert.Equal("200", lastMessageStore.SavedLastMessageId);
+        Assert.Equal("discord-1", linkedAccountStore.GetLinkedDiscordUserId("player-1"));
+        Assert.DoesNotContain(logger.WarningMessages, message => message.Contains("fast-forwarded stale backlog"));
+        Assert.Equal(2, statusTracker.Capture().LastProcessedPageCount);
+        Assert.Equal(103, statusTracker.Capture().LastProcessedMessageCount);
+        Assert.False(statusTracker.Capture().LastPollReachedProcessingCap);
+    }
+
+    [Fact]
+    public async Task PollOnceAsync_WhenSavedCursorHasMultipleFullPages_PreservesOldestToNewestOrderAcrossPages()
+    {
+        var webhookClient = new FakeDiscordWebhookClient(
+            new DiscordHttpResponse
+            {
+                StatusCode = 200,
+                Body = CreateMessagePageJson(Enumerable.Range(101, 100).Reverse().Select(index => (index.ToString(), index == 105 ? "ABC123" : index == 150 ? "DEF456" : "ignore", "discord-1", false)))
+            },
+            new DiscordHttpResponse
+            {
+                StatusCode = 200,
+                Body = CreateMessagePageJson(Enumerable.Range(201, 100).Reverse().Select(index => (index.ToString(), index == 205 ? "GHI789" : "ignore", "discord-1", false)))
+            },
+            new DiscordHttpResponse
+            {
+                StatusCode = 200,
+                Body = "[]"
+            });
+        var lastMessageStore = new FakeDiscordLinkLastMessageStore("100");
+        var linkedAccountStore = new FakeLinkedAccountStore();
+        var pendingCodeStore = new FakePendingDiscordLinkCodeStore();
+        pendingCodeStore.SaveCode("ABC123", new PendingDiscordLinkCodeRecord("player-1", DateTime.UtcNow.AddMinutes(10).Ticks));
+        pendingCodeStore.SaveCode("DEF456", new PendingDiscordLinkCodeRecord("player-2", DateTime.UtcNow.AddMinutes(10).Ticks));
+        pendingCodeStore.SaveCode("GHI789", new PendingDiscordLinkCodeRecord("player-3", DateTime.UtcNow.AddMinutes(10).Ticks));
+        var poller = CreatePoller(webhookClient, lastMessageStore, linkedAccountStore, pendingCodeStore);
+
+        await InvokePollOnceAsync(poller);
+
+        Assert.Equal("discord-1", linkedAccountStore.GetLinkedDiscordUserId("player-1"));
+        Assert.Equal("discord-1", linkedAccountStore.GetLinkedDiscordUserId("player-2"));
+        Assert.Equal("discord-1", linkedAccountStore.GetLinkedDiscordUserId("player-3"));
+        Assert.Equal(new[]
+        {
+            "https://discord.com/api/v10/channels/channel/messages?after=100&limit=100",
+            "https://discord.com/api/v10/channels/channel/messages?after=200&limit=100",
+            "https://discord.com/api/v10/channels/channel/messages?after=300&limit=100"
+        }, webhookClient.RequestedUrls);
+        Assert.Equal("300", lastMessageStore.SavedLastMessageId);
+    }
+
+    [Fact]
+    public async Task PollOnceAsync_WhenMessageContainsEmbeddedCode_IgnoresMessageAndDoesNotReply()
+    {
+        var webhookClient = new FakeDiscordWebhookClient(
+            """
+            [
+              { "id": "101", "content": "Please link ABC123", "author": { "id": "discord-1" } }
+            ]
+            """);
+        var lastMessageStore = new FakeDiscordLinkLastMessageStore("100");
+        var linkedAccountStore = new FakeLinkedAccountStore();
+        var pendingCodeStore = new FakePendingDiscordLinkCodeStore();
+        pendingCodeStore.SaveCode("ABC123", new PendingDiscordLinkCodeRecord("player-1", DateTime.UtcNow.AddMinutes(10).Ticks));
+        var poller = CreatePoller(webhookClient, lastMessageStore, linkedAccountStore, pendingCodeStore);
+
+        await InvokePollOnceAsync(poller);
+
+        Assert.Null(linkedAccountStore.GetLinkedDiscordUserId("player-1"));
+        Assert.Equal(0, webhookClient.PostBotJsonCallCount);
+        Assert.Equal("101", lastMessageStore.SavedLastMessageId);
+    }
+
+    [Fact]
+    public async Task PollOnceAsync_WhenFailureRepeats_SuppressesDuplicateWarningUntilSuccessClearsStreak()
+    {
+        var statusTracker = new DiscordLinkPollerStatusTracker();
+        var (api, logger) = CreateApiWithLogger();
+        var webhookClient = new FakeDiscordWebhookClient(
+            new DiscordHttpResponse { StatusCode = 401, Body = "{}" },
+            new DiscordHttpResponse { StatusCode = 401, Body = "{}" },
+            new DiscordHttpResponse { StatusCode = 200, Body = "[]" },
+            new DiscordHttpResponse { StatusCode = 401, Body = "{}" });
+        var poller = CreatePoller(
+            webhookClient,
+            new FakeDiscordLinkLastMessageStore("100"),
+            api: api,
+            statusTracker: statusTracker);
+
+        await InvokePollOnceAsync(poller);
+        await InvokePollOnceAsync(poller);
+
+        Assert.Single(logger.WarningMessages);
+        Assert.Equal("Discord link poll returned 401 Unauthorized. Check the configured bot token.", statusTracker.Capture().LastFailureSummary);
+
+        await InvokePollOnceAsync(poller);
+
+        Assert.Equal(string.Empty, statusTracker.Capture().LastFailureSummary);
+        Assert.True(statusTracker.Capture().LastSuccessfulPollUtc.HasValue);
+
+        await InvokePollOnceAsync(poller);
+
+        Assert.Equal(2, logger.WarningMessages.Count);
+    }
+
+    [Fact]
+    public async Task PollOnceAsync_WhenBacklogHitsPerPollCap_ResumesOnNextTickWithoutDroppingMessages()
+    {
+        var statusTracker = new DiscordLinkPollerStatusTracker();
+        var (api, logger) = CreateApiWithLogger();
+        var webhookClient = new FakeDiscordWebhookClient(
+            new DiscordHttpResponse
+            {
+                StatusCode = 200,
+                Body = CreateMessagePageJson(Enumerable.Range(101, 100).Reverse().Select(index => (index.ToString(), index == 105 ? "ABC123" : "ignore", "discord-1", false)))
+            },
+            new DiscordHttpResponse
+            {
+                StatusCode = 200,
+                Body = CreateMessagePageJson(Enumerable.Range(201, 100).Reverse().Select(index => (index.ToString(), index == 205 ? "DEF456" : "ignore", "discord-1", false)))
+            },
+            new DiscordHttpResponse
+            {
+                StatusCode = 200,
+                Body = CreateMessagePageJson(new[]
+                {
+                    ("301", "GHI789", "discord-1", false),
+                    ("300", "ignore", "discord-1", false)
+                })
+            },
+            new DiscordHttpResponse
+            {
+                StatusCode = 200,
+                Body = "[]"
+            });
+        var lastMessageStore = new FakeDiscordLinkLastMessageStore("100");
+        var linkedAccountStore = new FakeLinkedAccountStore();
+        var pendingCodeStore = new FakePendingDiscordLinkCodeStore();
+        pendingCodeStore.SaveCode("ABC123", new PendingDiscordLinkCodeRecord("player-1", DateTime.UtcNow.AddMinutes(10).Ticks));
+        pendingCodeStore.SaveCode("DEF456", new PendingDiscordLinkCodeRecord("player-2", DateTime.UtcNow.AddMinutes(10).Ticks));
+        pendingCodeStore.SaveCode("GHI789", new PendingDiscordLinkCodeRecord("player-3", DateTime.UtcNow.AddMinutes(10).Ticks));
+        var poller = CreatePoller(
+            webhookClient,
+            lastMessageStore,
+            linkedAccountStore,
+            pendingCodeStore,
+            api: api,
+            statusTracker: statusTracker,
+            maxPagesPerPoll: 2);
+
+        await InvokePollOnceAsync(poller);
+
+        Assert.Equal("200", lastMessageStore.SavedLastMessageId);
+        Assert.Equal("discord-1", linkedAccountStore.GetLinkedDiscordUserId("player-1"));
+        Assert.Equal("discord-1", linkedAccountStore.GetLinkedDiscordUserId("player-2"));
+        Assert.Null(linkedAccountStore.GetLinkedDiscordUserId("player-3"));
+        Assert.True(statusTracker.Capture().LastPollReachedProcessingCap);
+        Assert.Equal(2, statusTracker.Capture().LastProcessedPageCount);
+        Assert.Single(logger.WarningMessages);
+        Assert.Contains("processing cap of 2 pages", logger.WarningMessages[0]);
+
+        await InvokePollOnceAsync(poller);
+
+        Assert.Equal("discord-1", linkedAccountStore.GetLinkedDiscordUserId("player-3"));
+        Assert.Equal("300", lastMessageStore.SavedLastMessageId);
+        Assert.False(statusTracker.Capture().LastPollReachedProcessingCap);
+        Assert.Equal(1, logger.WarningMessages.Count);
+    }
+
+    [Fact]
+    public async Task PollOnceAsync_WhenDiscordRequestTimesOut_LogsTimeoutFailure()
+    {
+        var statusTracker = new DiscordLinkPollerStatusTracker();
+        var (api, logger) = CreateApiWithLogger();
+        var webhookClient = new FakeDiscordWebhookClient();
+        webhookClient.ExceptionToThrowOnGet = new TaskCanceledException();
+        var poller = CreatePoller(
+            webhookClient,
+            new FakeDiscordLinkLastMessageStore("100"),
+            api: api,
+            statusTracker: statusTracker);
+
+        await InvokePollOnceAsync(poller);
+
+        Assert.Single(logger.WarningMessages);
+        Assert.Contains("timed out after 10 seconds", logger.WarningMessages[0]);
+        Assert.Equal(
+            "Discord link poll request timed out after 10 seconds.",
+            statusTracker.Capture().LastFailureSummary);
+    }
+
     private static DiscordLinkPoller CreatePoller(
         FakeDiscordWebhookClient webhookClient,
         FakeDiscordLinkLastMessageStore lastMessageStore,
@@ -131,7 +361,11 @@ public sealed class DiscordLinkPollerTests
         FakeDiscordLinkRewardStateStore? rewardStateStore = null,
         FakeDiscordLinkRewardItemGiver? rewardItemGiver = null,
         FakePlayerLookup? playerLookup = null,
-        FakePlayerMessenger? messenger = null)
+        FakePlayerMessenger? messenger = null,
+        FakeDiscordMemberRoleClient? memberRoleClient = null,
+        ICoreServerAPI? api = null,
+        DiscordLinkPollerStatusTracker? statusTracker = null,
+        int maxPagesPerPoll = 10)
     {
         linkedAccountStore ??= new FakeLinkedAccountStore();
         pendingCodeStore ??= new FakePendingDiscordLinkCodeStore();
@@ -139,9 +373,11 @@ public sealed class DiscordLinkPollerTests
         rewardItemGiver ??= new FakeDiscordLinkRewardItemGiver();
         playerLookup ??= new FakePlayerLookup(null);
         messenger ??= new FakePlayerMessenger();
+        memberRoleClient ??= new FakeDiscordMemberRoleClient();
+        statusTracker ??= new DiscordLinkPollerStatusTracker();
 
         return new DiscordLinkPoller(
-            null!,
+            api!,
             new DiscordBridgeConfig
             {
                 BotToken = "token",
@@ -167,14 +403,16 @@ public sealed class DiscordLinkPollerTests
                     GuildId = "guild"
                 },
                 linkedAccountStore,
-                new FakeDiscordMemberRoleClient(),
+                memberRoleClient,
                 new DiscordRoleNameResolver(),
                 new DiscordDonatorPrivilegePlanner(new DonatorPrivilegeCatalog()),
                 new FakePlayerPrivilegeReader(),
                 new FakePlayerPrivilegeMutator(),
                 new DonatorPrivilegeCatalog(),
                 messenger),
-            messenger);
+            messenger,
+            statusTracker,
+            maxPagesPerPoll);
     }
 
     private static Task InvokePollOnceAsync(DiscordLinkPoller poller)
@@ -185,16 +423,29 @@ public sealed class DiscordLinkPollerTests
 
     private sealed class FakeDiscordWebhookClient : IDiscordWebhookClient
     {
-        private readonly string responseBody;
+        private readonly Queue<DiscordHttpResponse> responses;
 
         public FakeDiscordWebhookClient(string responseBody)
+            : this(new DiscordHttpResponse
+            {
+                StatusCode = 200,
+                Body = responseBody
+            })
         {
-            this.responseBody = responseBody;
+        }
+
+        public FakeDiscordWebhookClient(params DiscordHttpResponse[] responses)
+        {
+            this.responses = new Queue<DiscordHttpResponse>(responses);
         }
 
         public int GetCallCount { get; private set; }
 
         public int PostBotJsonCallCount { get; private set; }
+
+        public List<string> RequestedUrls { get; } = new();
+
+        public Exception? ExceptionToThrowOnGet { get; set; }
 
         public Task PostJsonAsync(string url, string json)
         {
@@ -214,11 +465,23 @@ public sealed class DiscordLinkPollerTests
         public Task<DiscordHttpResponse> GetAsync(string url, string botToken)
         {
             GetCallCount++;
-            return Task.FromResult(new DiscordHttpResponse
+            RequestedUrls.Add(url);
+
+            if (ExceptionToThrowOnGet != null)
             {
-                StatusCode = 200,
-                Body = responseBody
-            });
+                throw ExceptionToThrowOnGet;
+            }
+
+            if (responses.Count == 0)
+            {
+                return Task.FromResult(new DiscordHttpResponse
+                {
+                    StatusCode = 200,
+                    Body = "[]"
+                });
+            }
+
+            return Task.FromResult(responses.Dequeue());
         }
     }
 
@@ -357,9 +620,21 @@ public sealed class DiscordLinkPollerTests
 
     private sealed class FakeDiscordMemberRoleClient : IDiscordMemberRoleClient
     {
+        private readonly DiscordMemberRoles memberRoles;
+
+        public FakeDiscordMemberRoleClient()
+            : this(new DiscordMemberRoles(Array.Empty<string>(), Array.Empty<DiscordGuildRole>()))
+        {
+        }
+
+        public FakeDiscordMemberRoleClient(DiscordMemberRoles memberRoles)
+        {
+            this.memberRoles = memberRoles;
+        }
+
         public Task<DiscordMemberRoles> GetMemberRolesAsync(DiscordBridgeConfig config, string discordUserId)
         {
-            return Task.FromResult(new DiscordMemberRoles(Array.Empty<string>(), Array.Empty<DiscordGuildRole>()));
+            return Task.FromResult(memberRoles);
         }
     }
 
@@ -386,8 +661,11 @@ public sealed class DiscordLinkPollerTests
     {
         public string? LastDualMessage { get; private set; }
 
+        public string? LastInfoMessage { get; private set; }
+
         public void SendInfo(IServerPlayer player, string message, int groupId, int chatType)
         {
+            LastInfoMessage = message;
         }
 
         public void SendGeneral(IServerPlayer player, string message, int groupId, int chatType)
@@ -473,6 +751,29 @@ public sealed class DiscordLinkPollerTests
         return proxy;
     }
 
+    private static string CreateMessagePageJson(IEnumerable<(string Id, string Content, string AuthorId, bool IsBot)> messages)
+    {
+        return JsonSerializer.Serialize(messages.Select(message => new
+        {
+            id = message.Id,
+            content = message.Content,
+            author = new
+            {
+                id = message.AuthorId,
+                bot = message.IsBot
+            }
+        }));
+    }
+
+    private static (ICoreServerAPI Api, TestLoggerProxy Logger) CreateApiWithLogger()
+    {
+        ILogger logger = DispatchProxy.Create<ILogger, TestLoggerProxy>();
+        var loggerProxy = (TestLoggerProxy)(object)logger;
+        ICoreServerAPI api = DispatchProxy.Create<ICoreServerAPI, TestCoreServerApiProxy>();
+        ((TestCoreServerApiProxy)(object)api).Logger = logger;
+        return (api, loggerProxy);
+    }
+
     private class TestServerPlayerProxy : DispatchProxy
     {
         public Dictionary<string, object> Values { get; } = new(StringComparer.Ordinal);
@@ -495,6 +796,40 @@ public sealed class DiscordLinkPollerTests
             }
 
             return targetMethod.ReturnType.IsValueType
+                ? Activator.CreateInstance(targetMethod.ReturnType)
+                : null;
+        }
+    }
+
+    private class TestCoreServerApiProxy : DispatchProxy
+    {
+        public ILogger? Logger { get; set; }
+
+        protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
+        {
+            return targetMethod?.Name switch
+            {
+                "get_Logger" => Logger,
+                _ => targetMethod?.ReturnType.IsValueType == true
+                    ? Activator.CreateInstance(targetMethod.ReturnType)
+                    : null
+            };
+        }
+    }
+
+    private class TestLoggerProxy : DispatchProxy
+    {
+        public List<string> WarningMessages { get; } = new();
+
+        protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
+        {
+            if (targetMethod?.Name == "Warning")
+            {
+                WarningMessages.Add(args?.Length > 0 && args[0] != null ? args[0]!.ToString()! : string.Empty);
+                return null;
+            }
+
+            return targetMethod?.ReturnType.IsValueType == true
                 ? Activator.CreateInstance(targetMethod.ReturnType)
                 : null;
         }

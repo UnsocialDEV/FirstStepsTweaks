@@ -6,7 +6,7 @@ The current runtime is centered on a small [`FirstStepsTweak.cs`](C:\Users\dayto
 
 ## What the mod currently includes
 
-- Teleport commands: `/back`, `/sethome`, `/home`, `/delhome`, `/homes`, `/setspawn`, `/spawn`, `/setwarp`, `/warp`, `/warps`, `/delwarp`, `/rtp`, `/tpa`, `/tpaccept`, `/tpadeny`, `/tpacancel`, `/tpatoggle`
+- Teleport commands: `/back`, `/sethome`, `/home`, `/delhome`, `/homes`, `/setspawn`, `/spawn`, `/setwarp`, `/warp`, `/warps`, `/delwarp`, `/rtp`, `/tpto`, `/tphere`, `/tpa`, `/tpahere`, `/tpaccept`, `/tpadeny`, `/tpacancel`, `/tpatoggle`
 - Emergency / location recovery commands: `/setstormshelter`, `/stormshelter`, `/stuck`
 - Join and return messaging
 - Join-time invulnerability handling
@@ -59,7 +59,7 @@ Registered privileges currently include:
 | Feature | Main entry point | Active behavior |
 |---|---|---|
 | Join | `JoinFeature` | Join broadcasts, return messaging, join invulnerability, Discord link reward claim-on-join flow |
-| Teleport | `TeleportFeature` | Back, homes, spawn, storm shelter, stuck escape, warps, RTP, and TPA |
+| Teleport | `TeleportFeature` | Back, homes, spawn, storm shelter, stuck escape, warps, RTP, admin TP aliases, and bidirectional TPA |
 | Chat | `ChatFeature` | Donator chat prefix application on player chat |
 | Discord | `DiscordFeature` | Discord relay, `/discord`, `/discordlink`, `/discordunlink`, Discord link polling, avatar enrichment, and donor privilege synchronization |
 | Utility | `UtilityFeature` | Kits, `/whosonline`, `/wind`, `/heal`, `/feed`, and `/fsdebug` |
@@ -81,7 +81,10 @@ Registered privileges currently include:
 - `/warps`
 - `/delwarp <name>`
 - `/rtp`
+- `/tpto <player>`
+- `/tphere <player>`
 - `/tpa <player>`
+- `/tpahere <player>`
 - `/tpaccept`
 - `/tpadeny`
 - `/tpacancel`
@@ -89,6 +92,10 @@ Registered privileges currently include:
 - `/setstormshelter`
 - `/stormshelter`
 - `/stuck`
+
+`/tpto` and `/tphere` are admin-only instant aliases that coexist with vanilla `/tp`.
+
+`/tpa <player>` requests that you teleport to the target. `/tpahere <player>` requests that the target teleport to you. `/tpaccept`, `/tpadeny`, and `/tpacancel` operate on the oldest pending request in that direction-aware queue.
 
 ### Discord
 
@@ -408,11 +415,11 @@ Teleport settings include:
 
 RTP settings include:
 
-- `MinRadius` default `256`
-- `MaxRadius` default `2048`
+- `MinRadius` default `2500`
+- `MaxRadius` default `5000`
 - `MaxAttempts` default `24`
 - `CooldownSeconds` default `300`
-- `UsePlayerPositionAsCenter` default `true`
+- `UsePlayerPositionAsCenter` default `false` (world origin `X0/Z0` center)
 - `UseWarmup` default `true`
 
 ### `Join`
@@ -538,6 +545,18 @@ The gravestone system is intentionally decomposed. The higher-level `GravestoneS
 - grave block synchronization
 
 Player-facing gravestone commands are intentionally separate from the storage and rule layers.
+
+### Coordinate rules
+
+Use `Entity.Pos.X`, `Entity.Pos.Y`, `Entity.Pos.Z`, and `Entity.Pos.Dimension` as the mod's canonical world-coordinate system.
+
+When code needs an exact location, keep the exact doubles. This applies to homes, spawn, storm shelter, back, warps, and teleport destinations.
+
+When code needs a block position, explicitly floor the exact world coordinates into a new `BlockPos`. This applies to graves, land-claim checks, and other block/world-cell lookups.
+
+Persisted and engine-facing positions stay in absolute world space. When showing coordinates back to players, convert the absolute world `X/Z` values back to centered map coordinates by subtracting half of `WorldManager.MapSizeX` and `WorldManager.MapSizeZ`.
+
+Do not use `Entity.Pos.AsBlockPos`, `XYZInt`, `XInt`, `YInt`, `ZInt`, or `InternalY` for persisted, player-facing, or land-claim-sensitive coordinates.
 
 ## Build and development
 

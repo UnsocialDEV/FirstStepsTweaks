@@ -1,7 +1,10 @@
+using System.Reflection;
+using FirstStepsTweaks.Infrastructure.Coordinates;
 using FirstStepsTweaks.Infrastructure.LandClaims;
 using FirstStepsTweaks.Infrastructure.Teleport;
 using FirstStepsTweaks.Services;
 using Vintagestory.API.MathTools;
+using Vintagestory.API.Server;
 using Xunit;
 
 namespace FirstStepsTweaks.Tests
@@ -120,6 +123,42 @@ namespace FirstStepsTweaks.Tests
             Assert.Equal(string.Empty, message);
         }
 
+        [Fact]
+        public void TryResolveDestination_PlayerOverload_UsesCoordinateReaderBlockAndExactPosition()
+        {
+            LandClaimInfo currentClaim = new LandClaimInfo(
+                "current",
+                "Current",
+                "owner-1",
+                "Owner One",
+                new[] { CreateArea(10, 0, 0, 10, 10, 0) });
+
+            var coordinateReader = new FakeWorldCoordinateReader(
+                new Vec3d(10.9, 5.25, 0.5),
+                new BlockPos(10, 5, 0, 7),
+                7);
+            var service = new LandClaimEscapeService(
+                new DelegateLandClaimAccessor(pos =>
+                    pos.X == 10 && pos.Z == 0 && pos.dimension == 7
+                        ? currentClaim
+                        : LandClaimInfo.None),
+                new DelegateTeleportColumnSafetyScanner((x, z, y, dimension) =>
+                    x == 11 && z == 0 && dimension == 7
+                        ? new Vec3d(11.5, y, 0.5)
+                        : null),
+                new LandClaimEscapePlanner(),
+                coordinateReader);
+
+            bool result = service.TryResolveDestination(CreatePlayer(), out Vec3d destination, out string message);
+
+            Assert.True(result);
+            Assert.NotNull(destination);
+            Assert.Equal(11.5, destination.X);
+            Assert.Equal(string.Empty, message);
+            Assert.True(coordinateReader.PlayerExactPositionRequested);
+            Assert.True(coordinateReader.PlayerBlockPositionRequested);
+        }
+
         private static Cuboidi CreateArea(int minX, int minY, int minZ, int maxX, int maxY, int maxZ)
         {
             return new Cuboidi
@@ -160,6 +199,71 @@ namespace FirstStepsTweaks.Tests
             public Vec3d FindSafeDestination(int x, int z, int referenceY, int dimension)
             {
                 return resolver(x, z, referenceY, dimension);
+            }
+        }
+
+        private static IServerPlayer CreatePlayer()
+        {
+            return DispatchProxy.Create<IServerPlayer, ServerPlayerProxy>();
+        }
+
+        private sealed class FakeWorldCoordinateReader : IWorldCoordinateReader
+        {
+            private readonly Vec3d exactPosition;
+            private readonly BlockPos blockPosition;
+            private readonly int? dimension;
+
+            public FakeWorldCoordinateReader(Vec3d exactPosition, BlockPos blockPosition, int? dimension)
+            {
+                this.exactPosition = exactPosition;
+                this.blockPosition = blockPosition;
+                this.dimension = dimension;
+            }
+
+            public bool PlayerExactPositionRequested { get; private set; }
+
+            public bool PlayerBlockPositionRequested { get; private set; }
+
+            public Vec3d GetExactPosition(IServerPlayer player)
+            {
+                PlayerExactPositionRequested = true;
+                return exactPosition == null ? null : new Vec3d(exactPosition.X, exactPosition.Y, exactPosition.Z);
+            }
+
+            public Vec3d GetExactPosition(Vintagestory.API.Common.Entities.Entity entity)
+            {
+                return exactPosition == null ? null : new Vec3d(exactPosition.X, exactPosition.Y, exactPosition.Z);
+            }
+
+            public BlockPos GetBlockPosition(IServerPlayer player)
+            {
+                PlayerBlockPositionRequested = true;
+                return blockPosition?.Copy();
+            }
+
+            public BlockPos GetBlockPosition(Vintagestory.API.Common.Entities.Entity entity)
+            {
+                return blockPosition?.Copy();
+            }
+
+            public int? GetDimension(IServerPlayer player)
+            {
+                return dimension;
+            }
+
+            public int? GetDimension(Vintagestory.API.Common.Entities.Entity entity)
+            {
+                return dimension;
+            }
+        }
+
+        private class ServerPlayerProxy : DispatchProxy
+        {
+            protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
+            {
+                return targetMethod?.ReturnType.IsValueType == true
+                    ? System.Activator.CreateInstance(targetMethod.ReturnType)
+                    : null;
             }
         }
     }

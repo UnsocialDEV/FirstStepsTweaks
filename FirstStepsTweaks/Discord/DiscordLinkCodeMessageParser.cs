@@ -17,20 +17,14 @@ namespace FirstStepsTweaks.Discord
             }
 
             var knownCodes = new HashSet<string>(pendingCodes, StringComparer.OrdinalIgnoreCase);
-            MatchCollection matches = CandidateCodePattern.Matches(content.ToUpperInvariant());
-
-            foreach (Match match in matches)
+            string candidate = content.Trim().ToUpperInvariant();
+            if (!CandidateCodePattern.IsMatch(candidate) || candidate.Length != 6 || !knownCodes.Contains(candidate))
             {
-                if (!match.Success || !knownCodes.Contains(match.Value))
-                {
-                    continue;
-                }
-
-                code = match.Value;
-                return true;
+                return false;
             }
 
-            return false;
+            code = candidate;
+            return true;
         }
 
         public bool TryParseCandidateCode(string content, out string code)
@@ -41,8 +35,9 @@ namespace FirstStepsTweaks.Discord
                 return false;
             }
 
-            Match match = CandidateCodePattern.Match(content.ToUpperInvariant());
-            if (!match.Success)
+            string candidate = content.Trim().ToUpperInvariant();
+            Match match = CandidateCodePattern.Match(candidate);
+            if (!match.Success || match.Value.Length != candidate.Length)
             {
                 return false;
             }

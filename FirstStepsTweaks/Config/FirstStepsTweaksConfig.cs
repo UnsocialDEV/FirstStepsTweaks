@@ -5,6 +5,7 @@ namespace FirstStepsTweaks.Config
     public class FirstStepsTweaksConfig
     {
         public FeatureToggles Features { get; set; } = new FeatureToggles();
+        public AgentBridgeConfig AgentBridge { get; set; } = new AgentBridgeConfig();
         public ChatConfig Chat { get; set; } = new ChatConfig();
         public TeleportConfig Teleport { get; set; } = new TeleportConfig();
         public RtpConfig Rtp { get; set; } = new RtpConfig();
@@ -18,6 +19,7 @@ namespace FirstStepsTweaks.Config
 
     public class FeatureToggles
     {
+        public bool EnableAgentBridge { get; set; } = false;
         public bool EnableDebugCommand { get; set; } = true;
         public bool EnableDiscordCommand { get; set; } = true;
         public bool EnableSpawnCommands { get; set; } = true;
@@ -34,6 +36,17 @@ namespace FirstStepsTweaks.Config
         public bool EnableCorpseAdminCommands { get; set; } = true;
         public bool EnableJoinBroadcasts { get; set; } = true;
         public bool EnableLandClaimNotifications { get; set; } = true;
+    }
+
+    public class AgentBridgeConfig
+    {
+        public const string DefaultHost = "127.0.0.1";
+        public const int LegacyDefaultPort = 8765;
+        public const int DefaultPort = 28765;
+
+        public string Host { get; set; } = DefaultHost;
+        public int Port { get; set; } = DefaultPort;
+        public string SharedToken { get; set; } = string.Empty;
     }
 
     public class ChatConfig
@@ -71,11 +84,18 @@ namespace FirstStepsTweaks.Config
 
     public class RtpConfig
     {
-        public int MinRadius { get; set; } = 256;
-        public int MaxRadius { get; set; } = 2048;
+        public const int LegacyMinRadius = 256;
+        public const int LegacyMaxRadius = 2048;
+        public const bool LegacyUsePlayerPositionAsCenter = true;
+        public const int DefaultMinRadius = 2500;
+        public const int DefaultMaxRadius = 5000;
+        public const bool DefaultUsePlayerPositionAsCenter = false;
+
+        public int MinRadius { get; set; } = DefaultMinRadius;
+        public int MaxRadius { get; set; } = DefaultMaxRadius;
         public int MaxAttempts { get; set; } = 24;
         public int CooldownSeconds { get; set; } = 300;
-        public bool UsePlayerPositionAsCenter { get; set; } = true;
+        public bool UsePlayerPositionAsCenter { get; set; } = DefaultUsePlayerPositionAsCenter;
         public bool UseWarmup { get; set; } = true;
     }
 

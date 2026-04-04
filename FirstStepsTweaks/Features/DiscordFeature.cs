@@ -1,3 +1,4 @@
+using System;
 using FirstStepsTweaks.Commands;
 using FirstStepsTweaks.Config;
 using FirstStepsTweaks.Discord;
@@ -11,18 +12,18 @@ namespace FirstStepsTweaks.Features
     public sealed class DiscordFeature : IFeatureModule
     {
         private readonly ICoreServerAPI api;
-        private readonly FirstStepsTweaksConfig config;
-        private readonly FeatureRuntime runtime;
-        private readonly DiscordBridge discordBridge;
-        private readonly DiscordLinkPoller linkPoller;
         private readonly PlayerDonatorRoleSyncService roleSyncService;
-        private readonly DiscordLinkCommands linkCommands;
+        private readonly Action registerDiscordBridge;
+        private readonly Action registerLinkPoller;
+        private readonly Action registerLinkCommands;
+        private readonly Action registerDiscordCommands;
+        private readonly Action registerPlayerNowPlayingHandlers;
+        private readonly DiscordStartupCoordinator startupCoordinator;
+        private bool runtimeHooksRegistered;
 
         public DiscordFeature(ICoreServerAPI api, FirstStepsTweaksConfig config, FeatureRuntime runtime)
         {
             this.api = api;
-            this.config = config;
-            this.runtime = runtime;
             DiscordBridgeConfig discordConfig = new DiscordConfigStore(api).Load();
             var linkedAccountStore = new DiscordLinkedAccountStore(api);
             var pendingCodeStore = new PendingDiscordLinkCodeStore(api);
@@ -40,7 +41,7 @@ namespace FirstStepsTweaks.Features
                 linkedAccountStore,
                 new DiscordUserProfileClient(webhookClient),
                 new DiscordAvatarUrlResolver());
-            discordBridge = new DiscordBridge(api, avatarService, new DiscordRelayMessageNormalizer());
+            var discordBridge = new DiscordBridge(api, avatarService, new DiscordRelayMessageNormalizer());
 
             roleSyncService = new PlayerDonatorRoleSyncService(
                 api,
@@ -54,7 +55,7 @@ namespace FirstStepsTweaks.Features
                 privilegeCatalog,
                 runtime.Messenger);
 
-            linkPoller = new DiscordLinkPoller(
+            var linkPoller = new DiscordLinkPoller(
                 api,
                 discordConfig,
                 webhookClient,
@@ -64,28 +65,66 @@ namespace FirstStepsTweaks.Features
                 linkCodeParser,
                 runtime.PlayerLookup,
                 roleSyncService,
-                runtime.Messenger);
+                runtime.Messenger,
+                runtime.DiscordLinkPollerStatusTracker);
 
-            linkCommands = new DiscordLinkCommands(
+            var linkCommands = new DiscordLinkCommands(
                 api,
                 discordConfig,
                 linkService,
                 roleSyncService,
                 runtime.Messenger);
+
+            registerDiscordBridge = discordBridge.Register;
+            registerLinkPoller = linkPoller.Register;
+            registerLinkCommands = linkCommands.Register;
+            registerDiscordCommands = config.Features.EnableDiscordCommand
+                ? new DiscordCommands(api, config, runtime.Messenger).Register
+                : Noop;
+            registerPlayerNowPlayingHandlers = () => api.Event.PlayerNowPlaying += roleSyncService.OnPlayerNowPlaying;
+            startupCoordinator = new DiscordStartupCoordinator(api);
+        }
+
+        internal DiscordFeature(
+            ICoreServerAPI api,
+            Action registerDiscordBridge,
+            Action registerLinkPoller,
+            Action registerLinkCommands,
+            Action registerDiscordCommands,
+            Action registerPlayerNowPlayingHandlers,
+            DiscordStartupCoordinator startupCoordinator)
+        {
+            this.api = api;
+            this.registerDiscordBridge = registerDiscordBridge;
+            this.registerLinkPoller = registerLinkPoller;
+            this.registerLinkCommands = registerLinkCommands;
+            this.registerDiscordCommands = registerDiscordCommands;
+            this.registerPlayerNowPlayingHandlers = registerPlayerNowPlayingHandlers;
+            this.startupCoordinator = startupCoordinator;
         }
 
         public void Register()
         {
-            api.Event.PlayerChat += discordBridge.OnPlayerChat;
-            api.Event.PlayerNowPlaying += roleSyncService.OnPlayerNowPlaying;
-            linkPoller.Register();
+            registerDiscordCommands();
+            registerLinkCommands();
+            startupCoordinator.RunWhenWorldReady(RegisterRuntimeHooks);
+        }
 
-            if (config.Features.EnableDiscordCommand)
+        private void RegisterRuntimeHooks()
+        {
+            if (runtimeHooksRegistered)
             {
-                new DiscordCommands(api, config, runtime.Messenger).Register();
+                return;
             }
 
-            linkCommands.Register();
+            runtimeHooksRegistered = true;
+            registerDiscordBridge();
+            registerLinkPoller();
+            registerPlayerNowPlayingHandlers();
+        }
+
+        private static void Noop()
+        {
         }
     }
 }

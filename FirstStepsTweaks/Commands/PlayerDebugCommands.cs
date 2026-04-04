@@ -183,13 +183,7 @@ namespace FirstStepsTweaks.Commands
                 return TextCommandResult.Success();
             }
 
-            if (target.Entity?.Pos == null)
-            {
-                SendDual(args.Caller.Player, "Target player does not have a valid position.");
-                return TextCommandResult.Success();
-            }
-
-            homeStore.Set(target, homeName, target.Entity.Pos.X, target.Entity.Pos.Y, target.Entity.Pos.Z);
+            homeStore.Set(target, homeName);
             SendDual(args.Caller.Player, $"Set home '{homeStore.NormalizeHomeName(homeName)}' for {target.PlayerName}.");
             return TextCommandResult.Success();
         }

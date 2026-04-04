@@ -85,7 +85,8 @@ public class DebugDataTests
         var rewardStore = new FakeRewardStateStore();
         var relayCursorStore = new FakeLastMessageStore();
         var linkCursorStore = new FakeLinkLastMessageStore();
-        var reader = new DiscordDebugStateReader(linkedStore, pendingStore, rewardStore, relayCursorStore, linkCursorStore);
+        var linkPollerStatusTracker = new DiscordLinkPollerStatusTracker();
+        var reader = new DiscordDebugStateReader(linkedStore, pendingStore, rewardStore, relayCursorStore, linkCursorStore, linkPollerStatusTracker);
 
         linkedStore.SetLinkedDiscordUserId("uid-1", "discord-1");
         pendingStore.SaveCode("ABC123", new PendingDiscordLinkCodeRecord("uid-1", 999));
@@ -93,6 +94,9 @@ public class DebugDataTests
         rewardStore.MarkPendingReward("uid-2");
         relayCursorStore.Save("relay-55");
         linkCursorStore.Save("link-77");
+        linkPollerStatusTracker.RecordSuccess(new DateTime(2026, 03, 24, 12, 0, 0, DateTimeKind.Utc), 3, 42, true);
+        linkPollerStatusTracker.RecordFailure("Discord link poll returned 401 Unauthorized. Check the configured bot token.");
+        linkPollerStatusTracker.RecordSuccess(new DateTime(2026, 03, 24, 12, 5, 0, DateTimeKind.Utc), 2, 12, true);
 
         string summary = reader.Format(reader.Capture(DateTime.UnixEpoch));
 
@@ -104,6 +108,11 @@ public class DebugDataTests
         Assert.Contains("pendingRewards: 1", summary);
         Assert.Contains("relayCursorMessageId: relay-55", summary);
         Assert.Contains("linkCursorMessageId: link-77", summary);
+        Assert.Contains("linkPollLastSuccessfulUtc: 2026-03-24 12:05:00Z", summary);
+        Assert.Contains("linkPollLastFailureSummary: unset", summary);
+        Assert.Contains("linkPollLastProcessedPageCount: 2", summary);
+        Assert.Contains("linkPollLastProcessedMessageCount: 12", summary);
+        Assert.Contains("linkPollLastPollReachedProcessingCap: True", summary);
     }
 
     private static IServerPlayer CreatePlayer(string playerUid, string playerName)

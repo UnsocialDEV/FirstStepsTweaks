@@ -1,3 +1,4 @@
+using FirstStepsTweaks.Infrastructure.Coordinates;
 using Vintagestory.API.MathTools;
 using Vintagestory.API.Server;
 
@@ -7,24 +8,32 @@ namespace FirstStepsTweaks.Teleport
     {
         private const string SpawnKey = "fst_spawnpos";
         private readonly ICoreServerAPI api;
+        private readonly IWorldCoordinateReader coordinateReader;
 
         public SpawnStore(ICoreServerAPI api)
+            : this(api, new WorldCoordinateReader())
+        {
+        }
+
+        public SpawnStore(ICoreServerAPI api, IWorldCoordinateReader coordinateReader)
         {
             this.api = api;
+            this.coordinateReader = coordinateReader ?? new WorldCoordinateReader();
         }
 
         public void SetSpawn(IServerPlayer player)
         {
-            if (player?.Entity?.Pos == null)
+            Vec3d position = coordinateReader.GetExactPosition(player);
+            if (position == null)
             {
                 return;
             }
 
             double[] spawnData =
             {
-                player.Entity.Pos.X,
-                player.Entity.Pos.Y,
-                player.Entity.Pos.Z
+                position.X,
+                position.Y,
+                position.Z
             };
 
             api.WorldManager.SaveGame.StoreData(SpawnKey, spawnData);

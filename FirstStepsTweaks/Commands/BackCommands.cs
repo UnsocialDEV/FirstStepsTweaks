@@ -1,4 +1,5 @@
 using FirstStepsTweaks.Config;
+using FirstStepsTweaks.Infrastructure.Coordinates;
 using FirstStepsTweaks.Infrastructure.Messaging;
 using FirstStepsTweaks.Infrastructure.Teleport;
 using FirstStepsTweaks.Services;
@@ -18,6 +19,7 @@ namespace FirstStepsTweaks.Commands
         private readonly IBackLocationStore backLocationStore;
         private readonly ITeleportWarmupService teleportWarmupService;
         private readonly PlayerTeleportWarmupResolver warmupResolver;
+        private readonly IWorldCoordinateReader coordinateReader;
 
         public BackCommands(
             ICoreServerAPI api,
@@ -26,6 +28,18 @@ namespace FirstStepsTweaks.Commands
             IBackLocationStore backLocationStore,
             ITeleportWarmupService teleportWarmupService,
             PlayerTeleportWarmupResolver warmupResolver)
+            : this(api, config, messenger, backLocationStore, teleportWarmupService, warmupResolver, new WorldCoordinateReader())
+        {
+        }
+
+        public BackCommands(
+            ICoreServerAPI api,
+            FirstStepsTweaksConfig config,
+            IPlayerMessenger messenger,
+            IBackLocationStore backLocationStore,
+            ITeleportWarmupService teleportWarmupService,
+            PlayerTeleportWarmupResolver warmupResolver,
+            IWorldCoordinateReader coordinateReader)
         {
             this.api = api;
             teleportConfig = config?.Teleport ?? new TeleportConfig();
@@ -33,6 +47,7 @@ namespace FirstStepsTweaks.Commands
             this.backLocationStore = backLocationStore;
             this.teleportWarmupService = teleportWarmupService;
             this.warmupResolver = warmupResolver;
+            this.coordinateReader = coordinateReader ?? new WorldCoordinateReader();
         }
 
         public void Register()
@@ -58,7 +73,13 @@ namespace FirstStepsTweaks.Commands
                 return;
             }
 
-            backLocationStore.Set(player.PlayerUID, new Vec3d(player.Entity.Pos.X, player.Entity.Pos.Y, player.Entity.Pos.Z));
+            Vec3d currentLocation = coordinateReader.GetExactPosition(player);
+            if (currentLocation == null)
+            {
+                return;
+            }
+
+            backLocationStore.Set(player.PlayerUID, currentLocation);
         }
 
         private TextCommandResult Back(TextCommandCallingArgs args)
@@ -77,7 +98,12 @@ namespace FirstStepsTweaks.Commands
             {
                 TeleportBypass.NotifyBypassingCooldown(player, "/back warmup");
 
-                Vec3d currentLocation = new Vec3d(player.Entity.Pos.X, player.Entity.Pos.Y, player.Entity.Pos.Z);
+                Vec3d currentLocation = coordinateReader.GetExactPosition(player);
+                if (currentLocation == null)
+                {
+                    return TextCommandResult.Success();
+                }
+
                 player.Entity.TeleportToDouble(lastLocation.X, lastLocation.Y, lastLocation.Z);
                 backLocationStore.Set(player.PlayerUID, currentLocation);
 
@@ -103,7 +129,12 @@ namespace FirstStepsTweaks.Commands
                 CancelGeneralChatType = (int)EnumChatType.Notification,
                 ExecuteTeleport = () =>
                 {
-                    Vec3d currentLocation = new Vec3d(player.Entity.Pos.X, player.Entity.Pos.Y, player.Entity.Pos.Z);
+                    Vec3d currentLocation = coordinateReader.GetExactPosition(player);
+                    if (currentLocation == null)
+                    {
+                        return;
+                    }
+
                     player.Entity.TeleportToDouble(lastLocation.X, lastLocation.Y, lastLocation.Z);
                     backLocationStore.Set(player.PlayerUID, currentLocation);
                 }

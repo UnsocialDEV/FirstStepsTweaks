@@ -1,6 +1,8 @@
 using System.Reflection;
 using FirstStepsTweaks.Discord;
 using FirstStepsTweaks.Infrastructure.Messaging;
+using FirstStepsTweaks.Infrastructure.Players;
+using Vintagestory.API.Common;
 using Vintagestory.API.Server;
 using Xunit;
 
@@ -15,11 +17,13 @@ public sealed class DiscordLinkRewardJoinHandlerTests
         stateStore.MarkPendingReward("player-1");
         var itemGiver = new FakeDiscordLinkRewardItemGiver();
         var messenger = new FakePlayerMessenger();
+        var player = CreatePlayer("player-1");
         var handler = new DiscordLinkRewardJoinHandler(
             new DiscordLinkRewardService(stateStore, itemGiver),
+            new DelayedPlayerActionScheduler(CreateApi(player)),
             messenger);
 
-        handler.OnPlayerNowPlaying(CreatePlayer("player-1"));
+        handler.OnPlayerNowPlaying(player);
 
         Assert.Equal(1, itemGiver.GiveCount);
         Assert.Equal(1, messenger.DualCount);
@@ -30,11 +34,13 @@ public sealed class DiscordLinkRewardJoinHandlerTests
     public void OnPlayerNowPlaying_WhenNoPendingReward_DoesNothing()
     {
         var messenger = new FakePlayerMessenger();
+        var player = CreatePlayer("player-1");
         var handler = new DiscordLinkRewardJoinHandler(
             new DiscordLinkRewardService(new FakeDiscordLinkRewardStateStore(), new FakeDiscordLinkRewardItemGiver()),
+            new DelayedPlayerActionScheduler(CreateApi(player)),
             messenger);
 
-        handler.OnPlayerNowPlaying(CreatePlayer("player-1"));
+        handler.OnPlayerNowPlaying(player);
 
         Assert.Equal(0, messenger.DualCount);
     }
@@ -44,6 +50,19 @@ public sealed class DiscordLinkRewardJoinHandlerTests
         var proxy = DispatchProxy.Create<IServerPlayer, TestServerPlayerProxy>();
         ((TestServerPlayerProxy)(object)proxy).Values["get_PlayerUID"] = playerUid;
         return proxy;
+    }
+
+    private static ICoreServerAPI CreateApi(IServerPlayer player)
+    {
+        IServerWorldAccessor world = DispatchProxy.Create<IServerWorldAccessor, TestServerWorldAccessorProxy>();
+        ((TestServerWorldAccessorProxy)(object)world).AllOnlinePlayers = new IServerPlayer[] { player };
+
+        IServerEventAPI eventApi = DispatchProxy.Create<IServerEventAPI, TestServerEventApiProxy>();
+        ICoreServerAPI api = DispatchProxy.Create<ICoreServerAPI, TestCoreServerApiProxy>();
+        var apiProxy = (TestCoreServerApiProxy)(object)api;
+        apiProxy.Event = eventApi;
+        apiProxy.World = world;
+        return api;
     }
 
     private sealed class FakeDiscordLinkRewardStateStore : IDiscordLinkRewardStateStore
@@ -155,6 +174,58 @@ public sealed class DiscordLinkRewardJoinHandlerTests
             }
 
             return targetMethod.ReturnType.IsValueType
+                ? Activator.CreateInstance(targetMethod.ReturnType)
+                : null;
+        }
+    }
+
+    private class TestCoreServerApiProxy : DispatchProxy
+    {
+        public IServerEventAPI? Event { get; set; }
+
+        public IServerWorldAccessor? World { get; set; }
+
+        protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
+        {
+            return targetMethod?.Name switch
+            {
+                "get_Event" => Event,
+                "get_World" => World,
+                _ => targetMethod?.ReturnType.IsValueType == true
+                    ? Activator.CreateInstance(targetMethod.ReturnType)
+                    : null
+            };
+        }
+    }
+
+    private class TestServerEventApiProxy : DispatchProxy
+    {
+        protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
+        {
+            if (targetMethod?.Name == "RegisterCallback")
+            {
+                ((Delegate)args![0]!).DynamicInvoke(0f);
+                return 0L;
+            }
+
+            return targetMethod?.ReturnType.IsValueType == true
+                ? Activator.CreateInstance(targetMethod.ReturnType)
+                : null;
+        }
+    }
+
+    private class TestServerWorldAccessorProxy : DispatchProxy
+    {
+        public IServerPlayer[] AllOnlinePlayers { get; set; } = Array.Empty<IServerPlayer>();
+
+        protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
+        {
+            if (targetMethod?.Name == "get_AllOnlinePlayers")
+            {
+                return AllOnlinePlayers;
+            }
+
+            return targetMethod?.ReturnType.IsValueType == true
                 ? Activator.CreateInstance(targetMethod.ReturnType)
                 : null;
         }

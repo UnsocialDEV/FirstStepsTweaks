@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using FirstStepsTweaks.Infrastructure.Coordinates;
 using FirstStepsTweaks.Infrastructure.Messaging;
 using FirstStepsTweaks.Infrastructure.Teleport;
 using FirstStepsTweaks.Services;
@@ -19,17 +20,23 @@ namespace FirstStepsTweaks.Commands
         private readonly GravestoneService gravestoneService;
         private readonly IPlayerMessenger messenger;
         private readonly IBackLocationStore backLocationStore;
+        private readonly IWorldCoordinateReader coordinateReader;
+        private readonly IWorldCoordinateDisplayFormatter coordinateDisplayFormatter;
 
         public WhereIsMyGraveCommand(
             ICoreServerAPI api,
             GravestoneService gravestoneService,
             IPlayerMessenger messenger,
-            IBackLocationStore backLocationStore)
+            IBackLocationStore backLocationStore,
+            IWorldCoordinateReader coordinateReader,
+            IWorldCoordinateDisplayFormatter coordinateDisplayFormatter)
         {
             this.api = api;
             this.gravestoneService = gravestoneService;
             this.messenger = messenger;
             this.backLocationStore = backLocationStore;
+            this.coordinateReader = coordinateReader ?? new WorldCoordinateReader();
+            this.coordinateDisplayFormatter = coordinateDisplayFormatter ?? new WorldCoordinateDisplayFormatter(api);
         }
 
         public void Register()
@@ -45,7 +52,9 @@ namespace FirstStepsTweaks.Commands
         private TextCommandResult Execute(TextCommandCallingArgs args)
         {
             IServerPlayer player = args.Caller.Player as IServerPlayer;
-            if (player?.Entity?.Pos == null)
+            Vec3d currentPosition = coordinateReader.GetExactPosition(player);
+            int? currentDimension = coordinateReader.GetDimension(player);
+            if (currentPosition == null || !currentDimension.HasValue)
             {
                 return TextCommandResult.Success();
             }
@@ -75,19 +84,13 @@ namespace FirstStepsTweaks.Commands
                 return TextCommandResult.Success();
             }
 
-            if (!(player.Entity is EntityPlayer entityPlayer))
-            {
-                SendBoth(player, "Teleport is only available to in-game players.");
-                return TextCommandResult.Success();
-            }
-
-            if (entityPlayer.Pos.Dimension != resolvedGrave.Dimension)
+            if (currentDimension.Value != resolvedGrave.Dimension)
             {
                 SendBoth(player, $"Your grave is in dimension {resolvedGrave.Dimension}. Return to where you died (within 25 blocks) then use /whereismygrave again.");
                 return TextCommandResult.Success();
             }
 
-            double distance = entityPlayer.Pos.DistanceTo(target);
+            double distance = currentPosition.DistanceTo(target);
             if (distance > MaxTeleportDistanceBlocks)
             {
                 SendBoth(player, $"You are {Math.Ceiling(distance)} blocks from your grave. Return to where you died (within 25 blocks) and use /whereismygrave again.");
@@ -95,11 +98,16 @@ namespace FirstStepsTweaks.Commands
             }
 
             backLocationStore.RecordCurrentLocation(player);
-            entityPlayer.TeleportToDouble(
+            string displayPosition = coordinateDisplayFormatter.FormatBlockPosition(
+                resolvedGrave.Dimension,
+                resolvedGrave.X,
+                resolvedGrave.Y,
+                resolvedGrave.Z);
+            player.Entity.TeleportToDouble(
                 target.X,
                 target.Y,
                 target.Z,
-                () => SendBoth(player, $"Teleported you to your grave at {resolvedGrave.Dimension}:{resolvedGrave.X},{resolvedGrave.Y},{resolvedGrave.Z}."));
+                () => SendBoth(player, $"Teleported you to your grave at {displayPosition}."));
 
             return TextCommandResult.Success();
         }

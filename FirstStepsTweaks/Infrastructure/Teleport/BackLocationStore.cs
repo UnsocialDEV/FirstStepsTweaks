@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using FirstStepsTweaks.Infrastructure.Coordinates;
 using Vintagestory.API.MathTools;
 using Vintagestory.API.Server;
 
@@ -6,16 +7,28 @@ namespace FirstStepsTweaks.Infrastructure.Teleport
 {
     public sealed class BackLocationStore : IBackLocationStore
     {
+        private readonly IWorldCoordinateReader coordinateReader;
         private readonly Dictionary<string, Vec3d> lastPositionsByPlayerUid = new Dictionary<string, Vec3d>();
+
+        public BackLocationStore()
+            : this(new WorldCoordinateReader())
+        {
+        }
+
+        public BackLocationStore(IWorldCoordinateReader coordinateReader)
+        {
+            this.coordinateReader = coordinateReader ?? new WorldCoordinateReader();
+        }
 
         public void RecordCurrentLocation(IServerPlayer player)
         {
-            if (player?.Entity?.Pos == null)
+            Vec3d currentPosition = coordinateReader.GetExactPosition(player);
+            if (string.IsNullOrWhiteSpace(player?.PlayerUID) || currentPosition == null)
             {
                 return;
             }
 
-            lastPositionsByPlayerUid[player.PlayerUID] = new Vec3d(player.Entity.Pos.X, player.Entity.Pos.Y, player.Entity.Pos.Z);
+            lastPositionsByPlayerUid[player.PlayerUID] = currentPosition;
         }
 
         public bool TryGet(string playerUid, out Vec3d location)

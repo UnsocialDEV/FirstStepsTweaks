@@ -42,7 +42,7 @@ public sealed class DiscordLinkServiceTests
         pendingStore.SaveCode("ABC123", new PendingDiscordLinkCodeRecord("player-1", nowUtc.AddMinutes(10).Ticks));
         var service = new DiscordLinkService(linkedStore, pendingStore, new DiscordLinkCodeMessageParser(), 15);
 
-        bool result = service.TryCompleteLink("discord-1", "link ABC123", nowUtc, out string playerUid);
+        bool result = service.TryCompleteLink("discord-1", "ABC123", nowUtc, out string playerUid);
 
         Assert.True(result);
         Assert.Equal("player-1", playerUid);

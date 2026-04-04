@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using FirstStepsTweaks.Config;
+using FirstStepsTweaks.Infrastructure.Coordinates;
 using FirstStepsTweaks.Infrastructure.LandClaims;
 using Vintagestory.API.Common;
 using Vintagestory.API.Server;
@@ -13,10 +14,11 @@ namespace FirstStepsTweaks.Services
         private readonly LandClaimNotificationConfig config;
         private readonly ILandClaimAccessor landClaimAccessor;
         private readonly LandClaimMessageFormatter formatter;
+        private readonly IWorldCoordinateReader coordinateReader;
         private readonly Dictionary<string, LandClaimInfo> playerClaimByUid = new Dictionary<string, LandClaimInfo>();
 
         public LandClaimNotificationService(ICoreServerAPI api, FirstStepsTweaksConfig rootConfig)
-            : this(api, rootConfig, new ReflectionLandClaimAccessor(api), new LandClaimMessageFormatter())
+            : this(api, rootConfig, new ReflectionLandClaimAccessor(api), new LandClaimMessageFormatter(), new WorldCoordinateReader())
         {
         }
 
@@ -25,11 +27,22 @@ namespace FirstStepsTweaks.Services
             FirstStepsTweaksConfig rootConfig,
             ILandClaimAccessor landClaimAccessor,
             LandClaimMessageFormatter formatter)
+            : this(api, rootConfig, landClaimAccessor, formatter, new WorldCoordinateReader())
+        {
+        }
+
+        public LandClaimNotificationService(
+            ICoreServerAPI api,
+            FirstStepsTweaksConfig rootConfig,
+            ILandClaimAccessor landClaimAccessor,
+            LandClaimMessageFormatter formatter,
+            IWorldCoordinateReader coordinateReader)
         {
             this.api = api;
             config = rootConfig.LandClaims ?? new LandClaimNotificationConfig();
             this.landClaimAccessor = landClaimAccessor;
             this.formatter = formatter;
+            this.coordinateReader = coordinateReader ?? new WorldCoordinateReader();
 
             api.Event.RegisterGameTickListener(OnTick, Math.Max(200, config.TickIntervalMs));
             api.Event.PlayerDisconnect += OnPlayerDisconnect;
@@ -58,7 +71,13 @@ namespace FirstStepsTweaks.Services
                     ? snapshot
                     : LandClaimInfo.None;
 
-                LandClaimInfo currentClaim = landClaimAccessor.GetClaimAt(player.Entity.Pos.AsBlockPos);
+                var currentPosition = coordinateReader.GetBlockPosition(player);
+                if (currentPosition == null)
+                {
+                    continue;
+                }
+
+                LandClaimInfo currentClaim = landClaimAccessor.GetClaimAt(currentPosition);
                 if (previousClaim.Key == currentClaim.Key)
                 {
                     continue;

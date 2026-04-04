@@ -1,7 +1,9 @@
 using FirstStepsTweaks.Config;
 using FirstStepsTweaks.Gravestones;
+using FirstStepsTweaks.Infrastructure.Coordinates;
 using FirstStepsTweaks.Infrastructure.LandClaims;
 using FirstStepsTweaks.Infrastructure.Messaging;
+using FirstStepsTweaks.Infrastructure.Players;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -24,6 +26,9 @@ namespace FirstStepsTweaks.Services
         private readonly IGravePlacementService placementService;
         private readonly IGraveSnapshotter snapshotter;
         private readonly IGraveRestorer restorer;
+        private readonly IAdminModeStatusReader adminModeStatusReader;
+        private readonly IWorldCoordinateReader coordinateReader;
+        private readonly IWorldCoordinateDisplayFormatter coordinateDisplayFormatter;
         private readonly object claimLock = new object();
         private readonly HashSet<string> claimInProgress = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -31,18 +36,25 @@ namespace FirstStepsTweaks.Services
             ICoreServerAPI api,
             FirstStepsTweaksConfig rootConfig,
             IPlayerMessenger messenger,
-            ILandClaimAccessor landClaimAccessor)
+            ILandClaimAccessor landClaimAccessor,
+            IAdminModeStatusReader adminModeStatusReader,
+            IWorldCoordinateReader coordinateReader,
+            IWorldCoordinateDisplayFormatter coordinateDisplayFormatter)
         {
             this.api = api;
             config = rootConfig?.Corpse ?? new CorpseConfig();
             this.messenger = messenger ?? new PlayerMessenger();
+            this.adminModeStatusReader = adminModeStatusReader;
+            this.coordinateReader = coordinateReader ?? new WorldCoordinateReader();
+            this.coordinateDisplayFormatter = coordinateDisplayFormatter ?? new WorldCoordinateDisplayFormatter(api);
 
             graveManager = new GraveManager(api);
             claimPolicy = new GraveClaimPolicy();
             blockSynchronizer = new GraveBlockSynchronizer(api, config);
             placementService = new GravePlacementService(api, landClaimAccessor ?? new ReflectionLandClaimAccessor(api));
-            snapshotter = new GraveInventorySnapshotter();
-            restorer = new GraveInventoryRestorer(api, graveManager, blockSynchronizer);
+            var loadoutManager = new PlayerLoadoutManager(api);
+            snapshotter = new GraveInventorySnapshotter(loadoutManager);
+            restorer = new GraveInventoryRestorer(api, graveManager, blockSynchronizer, loadoutManager);
 
             api.Event.OnEntityDeath += OnEntityDeath;
             api.Event.BreakBlock += OnBreakBlock;
@@ -211,7 +223,13 @@ namespace FirstStepsTweaks.Services
             }
 
             IServerPlayer player = entityPlayer.Player as IServerPlayer;
-            if (player?.InventoryManager == null || player.Entity?.Pos == null)
+            BlockPos deathPos = coordinateReader.GetBlockPosition(player);
+            if (player?.InventoryManager == null || deathPos == null)
+            {
+                return;
+            }
+
+            if (adminModeStatusReader?.IsActive(player) == true)
             {
                 return;
             }
@@ -224,7 +242,7 @@ namespace FirstStepsTweaks.Services
 
             bool debugCaptureRequested = IsDebugTracePending();
             List<string> debugCaptureLines = debugCaptureRequested ? new List<string>() : null;
-            List<GraveInventorySnapshot> snapshots = snapshotter.SnapshotRelevantInventories(player, debugCaptureLines);
+            List<PlayerInventorySnapshot> snapshots = snapshotter.SnapshotRelevantInventories(player, debugCaptureLines);
             int capturedStacks = snapshots.Sum(snapshot => snapshot?.Slots?.Count ?? 0);
             if (capturedStacks <= 0)
             {
@@ -233,7 +251,6 @@ namespace FirstStepsTweaks.Services
 
             string graveId = Guid.NewGuid().ToString("N");
             bool debugCycleActive = TryStartDebugTraceCycle(graveId);
-            BlockPos deathPos = player.Entity.Pos.AsBlockPos.Copy();
             GravePlacementResult placement = placementService.FindPlacementPosition(player, deathPos, graveBlock);
             BlockPos gravePos = placement.Position;
             long nowUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
@@ -271,7 +288,7 @@ namespace FirstStepsTweaks.Services
             if (placement.MovedOutsideForeignClaim)
             {
                 string alertMessage = "You died inside a land claim you do not own, so your gravestone was placed outside the claim "
-                    + $"at {gravePos.X}, {gravePos.Y}, {gravePos.Z}.";
+                    + $"at {coordinateDisplayFormatter.FormatBlockPosition(gravePos)}.";
                 messenger.SendDual(player, alertMessage, (int)EnumChatType.CommandSuccess, (int)EnumChatType.Notification);
             }
 

@@ -34,5 +34,27 @@ namespace FirstStepsTweaks.Services
                 EnumChatType.Notification
             );
         }
+
+        public static void NotifyBypassingRtpCooldown(IServerPlayer player)
+        {
+            if (player == null)
+            {
+                return;
+            }
+
+            const string message = "You bypassed the /rtp cooldown.";
+
+            player.SendMessage(
+                GlobalConstants.InfoLogChatGroup,
+                message,
+                EnumChatType.CommandSuccess
+            );
+
+            player.SendMessage(
+                GlobalConstants.GeneralChatGroup,
+                message,
+                EnumChatType.Notification
+            );
+        }
     }
 }

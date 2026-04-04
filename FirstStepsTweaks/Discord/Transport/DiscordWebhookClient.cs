@@ -1,13 +1,20 @@
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
+using System;
 using System.Threading.Tasks;
 
 namespace FirstStepsTweaks.Discord.Transport
 {
     public sealed class DiscordWebhookClient : IDiscordWebhookClient
     {
+        internal const int RequestTimeoutSeconds = 10;
         private static readonly HttpClient http = new HttpClient();
+
+        static DiscordWebhookClient()
+        {
+            http.Timeout = TimeSpan.FromSeconds(RequestTimeoutSeconds);
+        }
 
         public async Task PostJsonAsync(string url, string json)
         {

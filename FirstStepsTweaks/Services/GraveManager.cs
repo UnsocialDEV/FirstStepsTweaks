@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
+using FirstStepsTweaks.Infrastructure.Players;
 using Vintagestory.API.MathTools;
 using Vintagestory.API.Server;
 
@@ -320,7 +321,7 @@ namespace FirstStepsTweaks.Services
                 CreatedUnixMs = source.CreatedUnixMs,
                 ProtectionEndsUnixMs = source.ProtectionEndsUnixMs,
                 CreatedTotalDays = source.CreatedTotalDays,
-                Inventories = new List<GraveInventorySnapshot>()
+                Inventories = new List<PlayerInventorySnapshot>()
             };
 
             if (source.Inventories == null)
@@ -328,30 +329,30 @@ namespace FirstStepsTweaks.Services
                 return clone;
             }
 
-            foreach (GraveInventorySnapshot inventory in source.Inventories)
+            foreach (PlayerInventorySnapshot inventory in source.Inventories)
             {
                 if (inventory == null)
                 {
                     continue;
                 }
 
-                var inventoryClone = new GraveInventorySnapshot
+                var inventoryClone = new PlayerInventorySnapshot
                 {
                     InventoryClassName = inventory.InventoryClassName,
                     InventoryId = inventory.InventoryId,
-                    Slots = new List<GraveSlotSnapshot>()
+                    Slots = new List<PlayerInventorySlotSnapshot>()
                 };
 
                 if (inventory.Slots != null)
                 {
-                    foreach (GraveSlotSnapshot slot in inventory.Slots)
+                    foreach (PlayerInventorySlotSnapshot slot in inventory.Slots)
                     {
                         if (slot == null)
                         {
                             continue;
                         }
 
-                        inventoryClone.Slots.Add(new GraveSlotSnapshot
+                        inventoryClone.Slots.Add(new PlayerInventorySlotSnapshot
                         {
                             SlotId = slot.SlotId,
                             StackBytes = slot.StackBytes == null

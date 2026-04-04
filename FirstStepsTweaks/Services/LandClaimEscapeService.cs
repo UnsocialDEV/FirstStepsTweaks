@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using FirstStepsTweaks.Infrastructure.Coordinates;
 using FirstStepsTweaks.Infrastructure.LandClaims;
 using FirstStepsTweaks.Infrastructure.Teleport;
 using Vintagestory.API.MathTools;
@@ -13,9 +14,10 @@ namespace FirstStepsTweaks.Services
         private readonly ILandClaimAccessor landClaimAccessor;
         private readonly ITeleportColumnSafetyScanner safetyScanner;
         private readonly LandClaimEscapePlanner planner;
+        private readonly IWorldCoordinateReader coordinateReader;
 
         public LandClaimEscapeService(ILandClaimAccessor landClaimAccessor, ITeleportColumnSafetyScanner safetyScanner)
-            : this(landClaimAccessor, safetyScanner, new LandClaimEscapePlanner())
+            : this(landClaimAccessor, safetyScanner, new LandClaimEscapePlanner(), new WorldCoordinateReader())
         {
         }
 
@@ -23,10 +25,20 @@ namespace FirstStepsTweaks.Services
             ILandClaimAccessor landClaimAccessor,
             ITeleportColumnSafetyScanner safetyScanner,
             LandClaimEscapePlanner planner)
+            : this(landClaimAccessor, safetyScanner, planner, new WorldCoordinateReader())
+        {
+        }
+
+        public LandClaimEscapeService(
+            ILandClaimAccessor landClaimAccessor,
+            ITeleportColumnSafetyScanner safetyScanner,
+            LandClaimEscapePlanner planner,
+            IWorldCoordinateReader coordinateReader)
         {
             this.landClaimAccessor = landClaimAccessor;
             this.safetyScanner = safetyScanner;
             this.planner = planner;
+            this.coordinateReader = coordinateReader ?? new WorldCoordinateReader();
         }
 
         public bool TryResolveDestination(IServerPlayer player, out Vec3d destination, out string message)
@@ -34,16 +46,18 @@ namespace FirstStepsTweaks.Services
             destination = null;
             message = "Teleport is only available to in-game players.";
 
-            if (player?.Entity?.Pos == null)
+            BlockPos playerPos = coordinateReader.GetBlockPosition(player);
+            Vec3d exactPosition = coordinateReader.GetExactPosition(player);
+            if (playerPos == null || exactPosition == null)
             {
                 return false;
             }
 
             return TryResolveDestination(
-                player.Entity.Pos.AsBlockPos.Copy(),
-                player.Entity.Pos.X,
-                player.Entity.Pos.Y,
-                player.Entity.Pos.Z,
+                playerPos,
+                exactPosition.X,
+                exactPosition.Y,
+                exactPosition.Z,
                 out destination,
                 out message);
         }

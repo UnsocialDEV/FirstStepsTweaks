@@ -1,14 +1,20 @@
-﻿using Vintagestory.API.Common;
+using FirstStepsTweaks.Infrastructure.Coordinates;
+using Vintagestory.API.Common;
 using Vintagestory.API.Server;
 
 namespace FirstStepsTweaks.Services
 {
     public static class ItemService
     {
+        private static readonly IWorldCoordinateReader CoordinateReader = new WorldCoordinateReader();
+
         public static void GiveCollectible(ICoreServerAPI api, IServerPlayer player, string code, int quantity)
         {
             if (string.IsNullOrWhiteSpace(code) || quantity <= 0)
+            {
                 return;
+            }
+
             AssetLocation asset = new AssetLocation(code);
 
             CollectibleObject collectible =
@@ -27,7 +33,11 @@ namespace FirstStepsTweaks.Services
 
             if (!fullyGiven && stack.StackSize > 0)
             {
-                api.World.SpawnItemEntity(stack, player.Entity.Pos.XYZ);
+                var position = CoordinateReader.GetExactPosition(player);
+                if (position != null)
+                {
+                    api.World.SpawnItemEntity(stack, position);
+                }
             }
         }
     }

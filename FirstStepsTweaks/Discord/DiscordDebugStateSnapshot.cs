@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 namespace FirstStepsTweaks.Discord
@@ -15,5 +16,15 @@ namespace FirstStepsTweaks.Discord
         public string RelayCursorMessageId { get; set; } = string.Empty;
 
         public string LinkCursorMessageId { get; set; } = string.Empty;
+
+        public DateTime? LinkPollLastSuccessfulUtc { get; set; }
+
+        public string LinkPollLastFailureSummary { get; set; } = string.Empty;
+
+        public int LinkPollLastProcessedPageCount { get; set; }
+
+        public int LinkPollLastProcessedMessageCount { get; set; }
+
+        public bool LinkPollLastPollReachedProcessingCap { get; set; }
     }
 }

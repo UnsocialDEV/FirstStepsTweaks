@@ -15,8 +15,8 @@ namespace FirstStepsTweaks.Features
         {
             this.config = config;
             var gravestoneService = runtime.GravestoneService;
-            whereIsMyGraveCommand = new WhereIsMyGraveCommand(api, gravestoneService, runtime.Messenger, runtime.BackLocationStore);
-            gravestoneCommands = new GravestoneCommands(api, gravestoneService, runtime.Messenger, runtime.PlayerLookup, runtime.BackLocationStore);
+            whereIsMyGraveCommand = new WhereIsMyGraveCommand(api, gravestoneService, runtime.Messenger, runtime.BackLocationStore, runtime.CoordinateReader, runtime.CoordinateDisplayFormatter);
+            gravestoneCommands = new GravestoneCommands(api, gravestoneService, runtime.Messenger, runtime.PlayerLookup, runtime.BackLocationStore, runtime.CoordinateReader, runtime.CoordinateDisplayFormatter);
         }
 
         public void Register()

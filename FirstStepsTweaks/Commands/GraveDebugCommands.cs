@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using System.Text;
+using FirstStepsTweaks.Infrastructure.Coordinates;
 using FirstStepsTweaks.Infrastructure.Messaging;
 using FirstStepsTweaks.Services;
 using Vintagestory.API.Common;
@@ -13,11 +14,13 @@ namespace FirstStepsTweaks.Commands
     {
         private readonly GravestoneService gravestoneService;
         private readonly IPlayerMessenger messenger;
+        private readonly IWorldCoordinateDisplayFormatter coordinateDisplayFormatter;
 
-        public GraveDebugCommands(GravestoneService gravestoneService, IPlayerMessenger messenger)
+        public GraveDebugCommands(GravestoneService gravestoneService, IPlayerMessenger messenger, IWorldCoordinateDisplayFormatter coordinateDisplayFormatter)
         {
             this.gravestoneService = gravestoneService;
             this.messenger = messenger;
+            this.coordinateDisplayFormatter = coordinateDisplayFormatter;
         }
 
         public TextCommandResult Inspect(TextCommandCallingArgs args)
@@ -36,7 +39,8 @@ namespace FirstStepsTweaks.Commands
             {
                 long ageMinutes = Math.Max(0, (now - grave.CreatedUnixMs) / 60000L);
                 string claimState = gravestoneService.IsPubliclyClaimable(grave) ? "public" : "owner-only";
-                builder.AppendLine($"- {grave.GraveId} | owner={grave.OwnerName} | pos={grave.Dimension}:{grave.X},{grave.Y},{grave.Z} | age={ageMinutes}m | {claimState}");
+                string displayPosition = coordinateDisplayFormatter.FormatBlockPosition(grave.Dimension, grave.X, grave.Y, grave.Z);
+                builder.AppendLine($"- {grave.GraveId} | owner={grave.OwnerName} | pos={displayPosition} | world={grave.Dimension}:{grave.X},{grave.Y},{grave.Z} | age={ageMinutes}m | {claimState}");
             }
 
             SendInfo(args.Caller.Player, builder.ToString().TrimEnd());

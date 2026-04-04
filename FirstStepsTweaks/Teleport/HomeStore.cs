@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using FirstStepsTweaks.Infrastructure.Coordinates;
 using FirstStepsTweaks.Services;
 using Vintagestory.API.MathTools;
 using Vintagestory.API.Server;
@@ -15,17 +16,28 @@ namespace FirstStepsTweaks.Teleport
         private readonly HomeDataSerializer serializer;
         private readonly HomeNameNormalizer normalizer;
         private readonly DefaultHomeResolver defaultHomeResolver;
+        private readonly IWorldCoordinateReader coordinateReader;
 
         public HomeStore()
-            : this(new HomeDataSerializer(), new HomeNameNormalizer(), new DefaultHomeResolver())
+            : this(new HomeDataSerializer(), new HomeNameNormalizer(), new DefaultHomeResolver(), new WorldCoordinateReader())
         {
         }
 
         public HomeStore(HomeDataSerializer serializer, HomeNameNormalizer normalizer, DefaultHomeResolver defaultHomeResolver)
+            : this(serializer, normalizer, defaultHomeResolver, new WorldCoordinateReader())
+        {
+        }
+
+        public HomeStore(
+            HomeDataSerializer serializer,
+            HomeNameNormalizer normalizer,
+            DefaultHomeResolver defaultHomeResolver,
+            IWorldCoordinateReader coordinateReader)
         {
             this.serializer = serializer;
             this.normalizer = normalizer;
             this.defaultHomeResolver = defaultHomeResolver;
+            this.coordinateReader = coordinateReader ?? new WorldCoordinateReader();
         }
 
         public IReadOnlyDictionary<string, HomeLocation> GetAll(IServerPlayer player)
@@ -83,12 +95,13 @@ namespace FirstStepsTweaks.Teleport
 
         public void Set(IServerPlayer player, string homeName)
         {
-            if (player?.Entity?.Pos == null)
+            Vec3d position = coordinateReader.GetExactPosition(player);
+            if (position == null)
             {
                 return;
             }
 
-            Set(player, homeName, player.Entity.Pos.X, player.Entity.Pos.Y, player.Entity.Pos.Z);
+            Set(player, homeName, position.X, position.Y, position.Z);
         }
 
         public void Set(IServerPlayer player, string homeName, Vec3d position)

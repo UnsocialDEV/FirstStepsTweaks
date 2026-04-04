@@ -19,22 +19,34 @@ namespace FirstStepsTweaks.Features
         private readonly WarpCommands warpCommands;
         private readonly RtpCommands rtpCommands;
         private readonly TpaCommands tpaCommands;
+        private readonly AdminTeleportCommands adminTeleportCommands;
 
         public TeleportFeature(ICoreServerAPI api, FirstStepsTweaksConfig config, FeatureRuntime runtime)
         {
             this.api = api;
             this.config = config;
-            var homeStore = new HomeStore();
+            var homeStore = new HomeStore(new HomeDataSerializer(), new HomeNameNormalizer(), new DefaultHomeResolver(), runtime.CoordinateReader);
             var homeLimitResolver = new PlayerHomeLimitResolver();
             var warmupResolver = new PlayerTeleportWarmupResolver();
             var homeSlotPolicy = new HomeSlotPolicy();
             var homeAccessPolicy = new HomeAccessPolicy();
             var homeDeletionTargetResolver = new HomeDeletionTargetResolver();
+            var playerTeleporter = new PlayerTeleporter();
+            var tpaPreferenceStore = new TpaPreferenceStore();
+            var tpaRequestStore = new TpaRequestStore();
+            var tpaMessageFormatter = new TpaRequestMessageFormatter();
+            var tpaTeleportService = new TpaTeleportService(
+                config,
+                runtime.BackLocationStore,
+                runtime.TeleportWarmupService,
+                playerTeleporter,
+                warmupResolver,
+                runtime.CoordinateReader);
 
-            backCommands = new BackCommands(api, config, runtime.Messenger, runtime.BackLocationStore, runtime.TeleportWarmupService, warmupResolver);
+            backCommands = new BackCommands(api, config, runtime.Messenger, runtime.BackLocationStore, runtime.TeleportWarmupService, warmupResolver, runtime.CoordinateReader);
             homeCommands = new HomeCommands(api, config, homeStore, runtime.Messenger, runtime.BackLocationStore, runtime.TeleportWarmupService, homeLimitResolver, warmupResolver, homeSlotPolicy, homeAccessPolicy, homeDeletionTargetResolver);
-            spawnCommands = new SpawnCommands(api, config, new SpawnStore(api), runtime.Messenger, runtime.BackLocationStore, runtime.TeleportWarmupService, warmupResolver);
-            var stormShelterStore = new StormShelterStore(api);
+            spawnCommands = new SpawnCommands(api, config, new SpawnStore(api, runtime.CoordinateReader), runtime.Messenger, runtime.BackLocationStore, runtime.TeleportWarmupService, warmupResolver);
+            var stormShelterStore = new StormShelterStore(api, runtime.CoordinateReader);
             stormShelterCommands = new StormShelterCommands(
                 api,
                 stormShelterStore,
@@ -47,23 +59,43 @@ namespace FirstStepsTweaks.Features
                 runtime.BackLocationStore,
                 runtime.TeleportWarmupService,
                 warmupResolver,
-                new LandClaimEscapeService(runtime.LandClaimAccessor, new TeleportColumnSafetyScanner(api)));
-            warpCommands = new WarpCommands(api, config, new WarpStore(api), runtime.Messenger, runtime.BackLocationStore, runtime.TeleportWarmupService, warmupResolver);
-            rtpCommands = new RtpCommands(api, config, runtime.Messenger, runtime.BackLocationStore, runtime.TeleportWarmupService, warmupResolver, new RtpCooldownStore());
+                new LandClaimEscapeService(runtime.LandClaimAccessor, new TeleportColumnSafetyScanner(api), new LandClaimEscapePlanner(), runtime.CoordinateReader));
+            warpCommands = new WarpCommands(api, config, new WarpStore(api), runtime.Messenger, runtime.BackLocationStore, runtime.TeleportWarmupService, warmupResolver, runtime.CoordinateReader);
+            var rtpConfig = config?.Rtp ?? new RtpConfig();
+            var rtpPlanner = new RtpColumnPlanner(rtpConfig);
+            var rtpResolver = new RtpDestinationResolver(
+                rtpConfig,
+                rtpPlanner,
+                new RtpColumnSafetyScanner(api),
+                runtime.LandClaimAccessor,
+                runtime.CoordinateReader);
+            rtpCommands = new RtpCommands(
+                api,
+                new RtpTeleportService(
+                    config,
+                    runtime.Messenger,
+                    runtime.BackLocationStore,
+                    runtime.TeleportWarmupService,
+                    playerTeleporter,
+                    warmupResolver,
+                    new RtpCooldownStore(),
+                    rtpResolver));
+            adminTeleportCommands = new AdminTeleportCommands(
+                api,
+                new AdminTeleportService(runtime.PlayerLookup, runtime.BackLocationStore, playerTeleporter, runtime.Messenger, runtime.CoordinateReader));
             tpaCommands = new TpaCommands(
                 api,
-                config,
-                runtime.Messenger,
-                runtime.PlayerLookup,
-                runtime.TeleportWarmupService,
-                runtime.BackLocationStore,
-                warmupResolver,
-                new TpaPreferenceStore(),
-                new TpaRequestStore());
+                new TpaRequestCreator(api, config, runtime.Messenger, runtime.PlayerLookup, tpaPreferenceStore, tpaRequestStore, tpaMessageFormatter),
+                new TpaRequestAccepter(api, runtime.Messenger, runtime.PlayerLookup, tpaRequestStore, tpaTeleportService, tpaMessageFormatter),
+                new TpaRequestDenier(api, runtime.Messenger, runtime.PlayerLookup, tpaRequestStore, tpaMessageFormatter),
+                new TpaRequestCanceller(api, runtime.Messenger, runtime.PlayerLookup, tpaRequestStore, tpaMessageFormatter),
+                new TpaToggleService(api, runtime.Messenger, runtime.PlayerLookup, tpaPreferenceStore, tpaRequestStore, tpaMessageFormatter));
         }
 
         public void Register()
         {
+            adminTeleportCommands.Register();
+
             if (config.Features.EnableBackCommand)
             {
                 api.Event.OnEntityDeath += backCommands.OnEntityDeath;

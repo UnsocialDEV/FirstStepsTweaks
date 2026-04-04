@@ -1,3 +1,4 @@
+using FirstStepsTweaks.Infrastructure.Coordinates;
 using FirstStepsTweaks.Infrastructure.Messaging;
 using FirstStepsTweaks.Infrastructure.Players;
 using FirstStepsTweaks.Infrastructure.Teleport;
@@ -22,19 +23,25 @@ namespace FirstStepsTweaks.Commands
         private readonly IPlayerMessenger messenger;
         private readonly IPlayerLookup playerLookup;
         private readonly IBackLocationStore backLocationStore;
+        private readonly IWorldCoordinateReader coordinateReader;
+        private readonly IWorldCoordinateDisplayFormatter coordinateDisplayFormatter;
 
         public GravestoneCommands(
             ICoreServerAPI api,
             GravestoneService gravestoneService,
             IPlayerMessenger messenger,
             IPlayerLookup playerLookup,
-            IBackLocationStore backLocationStore)
+            IBackLocationStore backLocationStore,
+            IWorldCoordinateReader coordinateReader,
+            IWorldCoordinateDisplayFormatter coordinateDisplayFormatter)
         {
             this.api = api;
             this.gravestoneService = gravestoneService;
             this.messenger = messenger;
             this.playerLookup = playerLookup;
             this.backLocationStore = backLocationStore;
+            this.coordinateReader = coordinateReader ?? new WorldCoordinateReader();
+            this.coordinateDisplayFormatter = coordinateDisplayFormatter ?? new WorldCoordinateDisplayFormatter(api);
         }
 
         public void Register()
@@ -112,7 +119,8 @@ namespace FirstStepsTweaks.Commands
 
                 long ageMinutes = Math.Max(0, (now - grave.CreatedUnixMs) / 60000L);
                 string claimState = gravestoneService.IsPubliclyClaimable(grave) ? "public" : "owner-only";
-                sb.AppendLine($"- {grave.GraveId} | owner={grave.OwnerName} | pos={grave.Dimension}:{grave.X},{grave.Y},{grave.Z} | age={ageMinutes}m | {claimState}");
+                string displayPosition = coordinateDisplayFormatter.FormatBlockPosition(grave.Dimension, grave.X, grave.Y, grave.Z);
+                sb.AppendLine($"- {grave.GraveId} | owner={grave.OwnerName} | pos={displayPosition} | age={ageMinutes}m | {claimState}");
             }
 
             messenger.SendInfo(caller, sb.ToString().TrimEnd(), GlobalConstants.InfoLogChatGroup, (int)EnumChatType.Notification);
@@ -263,7 +271,8 @@ namespace FirstStepsTweaks.Commands
 
             backLocationStore.RecordCurrentLocation(caller);
 
-            if (entityPlayer.Pos != null && entityPlayer.Pos.Dimension != grave.Dimension)
+            int? currentDimension = coordinateReader.GetDimension(caller);
+            if (currentDimension.HasValue && currentDimension.Value != grave.Dimension)
             {
                 entityPlayer.ChangeDimension(grave.Dimension);
             }
@@ -272,7 +281,7 @@ namespace FirstStepsTweaks.Commands
                 target.X,
                 target.Y,
                 target.Z,
-                () => SendBoth(caller, $"Teleported to gravestone '{grave.GraveId}' at {grave.Dimension}:{grave.X},{grave.Y},{grave.Z}."));
+                () => SendBoth(caller, $"Teleported to gravestone '{grave.GraveId}' at {coordinateDisplayFormatter.FormatBlockPosition(grave.Dimension, grave.X, grave.Y, grave.Z)}."));
 
             return TextCommandResult.Success();
         }

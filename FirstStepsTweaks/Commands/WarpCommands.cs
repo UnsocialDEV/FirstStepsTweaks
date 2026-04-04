@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using FirstStepsTweaks.Config;
+using FirstStepsTweaks.Infrastructure.Coordinates;
 using FirstStepsTweaks.Infrastructure.Messaging;
 using FirstStepsTweaks.Infrastructure.Teleport;
 using FirstStepsTweaks.Services;
@@ -21,6 +22,7 @@ namespace FirstStepsTweaks.Commands
         private readonly IBackLocationStore backLocationStore;
         private readonly ITeleportWarmupService teleportWarmupService;
         private readonly PlayerTeleportWarmupResolver warmupResolver;
+        private readonly IWorldCoordinateReader coordinateReader;
 
         public WarpCommands(
             ICoreServerAPI api,
@@ -30,6 +32,19 @@ namespace FirstStepsTweaks.Commands
             IBackLocationStore backLocationStore,
             ITeleportWarmupService teleportWarmupService,
             PlayerTeleportWarmupResolver warmupResolver)
+            : this(api, config, warpStore, messenger, backLocationStore, teleportWarmupService, warmupResolver, new WorldCoordinateReader())
+        {
+        }
+
+        public WarpCommands(
+            ICoreServerAPI api,
+            FirstStepsTweaksConfig config,
+            WarpStore warpStore,
+            IPlayerMessenger messenger,
+            IBackLocationStore backLocationStore,
+            ITeleportWarmupService teleportWarmupService,
+            PlayerTeleportWarmupResolver warmupResolver,
+            IWorldCoordinateReader coordinateReader)
         {
             this.api = api;
             teleportConfig = config?.Teleport ?? new TeleportConfig();
@@ -38,6 +53,7 @@ namespace FirstStepsTweaks.Commands
             this.backLocationStore = backLocationStore;
             this.teleportWarmupService = teleportWarmupService;
             this.warmupResolver = warmupResolver;
+            this.coordinateReader = coordinateReader ?? new WorldCoordinateReader();
         }
 
         public void Register()
@@ -86,10 +102,16 @@ namespace FirstStepsTweaks.Commands
             }
 
             Dictionary<string, double[]> warps = warpStore.LoadWarps();
-            var pos = player.Entity.Pos;
+            var position = coordinateReader.GetExactPosition(player);
+            if (position == null)
+            {
+                messenger.SendDual(player, "Unable to read your current position.", (int)EnumChatType.CommandSuccess, (int)EnumChatType.Notification);
+                return TextCommandResult.Success();
+            }
+
             bool updated = warps.ContainsKey(warpName);
 
-            warps[warpName] = new[] { pos.X, pos.Y, pos.Z };
+            warps[warpName] = new[] { position.X, position.Y, position.Z };
             warpStore.SaveWarps(warps);
 
             string action = updated ? "updated" : "set";

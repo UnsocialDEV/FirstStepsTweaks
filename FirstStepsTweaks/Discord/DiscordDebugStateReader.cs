@@ -12,23 +12,27 @@ namespace FirstStepsTweaks.Discord
         private readonly IDiscordLinkRewardStateStore rewardStateStore;
         private readonly IDiscordLastMessageStore relayCursorStore;
         private readonly IDiscordLinkLastMessageStore linkCursorStore;
+        private readonly DiscordLinkPollerStatusTracker linkPollerStatusTracker;
 
         public DiscordDebugStateReader(
             IDiscordLinkedAccountStore linkedAccountStore,
             IPendingDiscordLinkCodeStore pendingCodeStore,
             IDiscordLinkRewardStateStore rewardStateStore,
             IDiscordLastMessageStore relayCursorStore,
-            IDiscordLinkLastMessageStore linkCursorStore)
+            IDiscordLinkLastMessageStore linkCursorStore,
+            DiscordLinkPollerStatusTracker linkPollerStatusTracker)
         {
             this.linkedAccountStore = linkedAccountStore;
             this.pendingCodeStore = pendingCodeStore;
             this.rewardStateStore = rewardStateStore;
             this.relayCursorStore = relayCursorStore;
             this.linkCursorStore = linkCursorStore;
+            this.linkPollerStatusTracker = linkPollerStatusTracker;
         }
 
         public DiscordDebugStateSnapshot Capture(DateTime nowUtc)
         {
+            DiscordLinkPollerStatusSnapshot linkPollerStatus = linkPollerStatusTracker.Capture();
             return new DiscordDebugStateSnapshot
             {
                 LinkedAccounts = new Dictionary<string, string>(linkedAccountStore.GetAllLinkedDiscordUserIds(), StringComparer.OrdinalIgnoreCase),
@@ -36,7 +40,12 @@ namespace FirstStepsTweaks.Discord
                 ClaimedRewardPlayerUids = rewardStateStore.GetClaimedPlayerUids(),
                 PendingRewardPlayerUids = rewardStateStore.GetPendingRewardPlayerUids(),
                 RelayCursorMessageId = relayCursorStore.Load() ?? string.Empty,
-                LinkCursorMessageId = linkCursorStore.Load() ?? string.Empty
+                LinkCursorMessageId = linkCursorStore.Load() ?? string.Empty,
+                LinkPollLastSuccessfulUtc = linkPollerStatus.LastSuccessfulPollUtc,
+                LinkPollLastFailureSummary = linkPollerStatus.LastFailureSummary,
+                LinkPollLastProcessedPageCount = linkPollerStatus.LastProcessedPageCount,
+                LinkPollLastProcessedMessageCount = linkPollerStatus.LastProcessedMessageCount,
+                LinkPollLastPollReachedProcessingCap = linkPollerStatus.LastPollReachedProcessingCap
             };
         }
 
@@ -70,12 +79,22 @@ namespace FirstStepsTweaks.Discord
 
             builder.AppendLine($"- relayCursorMessageId: {FormatNullable(snapshot.RelayCursorMessageId)}");
             builder.AppendLine($"- linkCursorMessageId: {FormatNullable(snapshot.LinkCursorMessageId)}");
+            builder.AppendLine($"- linkPollLastSuccessfulUtc: {FormatNullable(snapshot.LinkPollLastSuccessfulUtc)}");
+            builder.AppendLine($"- linkPollLastFailureSummary: {FormatNullable(snapshot.LinkPollLastFailureSummary)}");
+            builder.AppendLine($"- linkPollLastProcessedPageCount: {snapshot.LinkPollLastProcessedPageCount}");
+            builder.AppendLine($"- linkPollLastProcessedMessageCount: {snapshot.LinkPollLastProcessedMessageCount}");
+            builder.AppendLine($"- linkPollLastPollReachedProcessingCap: {snapshot.LinkPollLastPollReachedProcessingCap}");
             return builder.ToString().TrimEnd();
         }
 
         private static string FormatNullable(string value)
         {
             return string.IsNullOrWhiteSpace(value) ? "unset" : value;
+        }
+
+        private static string FormatNullable(DateTime? value)
+        {
+            return value.HasValue ? value.Value.ToString("u") : "unset";
         }
     }
 }

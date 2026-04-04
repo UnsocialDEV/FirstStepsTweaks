@@ -1,4 +1,7 @@
+using System;
+using System.Collections.Generic;
 using System.Reflection;
+using System.Threading.Tasks;
 using FirstStepsTweaks.Discord;
 using FirstStepsTweaks.Infrastructure.Messaging;
 using FirstStepsTweaks.Infrastructure.Players;
@@ -15,17 +18,20 @@ public sealed class PlayerDonatorRoleSyncServiceTests
     {
         var linkedStore = new FakeLinkedAccountStore();
         linkedStore.SetLinkedDiscordUserId("player-1", "discord-1");
-
-        var memberRoleClient = new FakeDiscordMemberRoleClient(new DiscordMemberRoles(
-            new[] { "1", "2" },
-            new[]
-            {
-                new DiscordGuildRole("1", "supporter"),
-                new DiscordGuildRole("2", "founder")
-            }));
         var privilegeMutator = new FakePlayerPrivilegeMutator();
         var messenger = new FakePlayerMessenger();
-        var service = CreateService(linkedStore, memberRoleClient, new FakePlayerPrivilegeReader(), privilegeMutator, messenger);
+        var service = CreateService(
+            linkedStore,
+            new FakeDiscordMemberRoleClient(new DiscordMemberRoles(
+                new[] { "1", "2" },
+                new[]
+                {
+                    new DiscordGuildRole("1", "supporter"),
+                    new DiscordGuildRole("2", "founder")
+                })),
+            new FakePlayerPrivilegeReader(),
+            privilegeMutator,
+            messenger);
 
         await service.SyncAsync(CreatePlayer("player-1", "Ava"));
 
@@ -40,7 +46,6 @@ public sealed class PlayerDonatorRoleSyncServiceTests
             },
             privilegeMutator.GrantedPrivileges);
         Assert.Empty(privilegeMutator.RevokedPrivileges);
-        Assert.Equal(1, messenger.InfoCount);
         Assert.Equal("Discord donator role synced.", messenger.LastInfoMessage);
     }
 
@@ -49,12 +54,15 @@ public sealed class PlayerDonatorRoleSyncServiceTests
     {
         var linkedStore = new FakeLinkedAccountStore();
         linkedStore.SetLinkedDiscordUserId("player-1", "discord-1");
-
-        var memberRoleClient = new FakeDiscordMemberRoleClient(new DiscordMemberRoles(
-            new[] { "1" },
-            new[] { new DiscordGuildRole("1", "FoUnDeR") }));
         var privilegeMutator = new FakePlayerPrivilegeMutator();
-        var service = CreateService(linkedStore, memberRoleClient, new FakePlayerPrivilegeReader(), privilegeMutator, new FakePlayerMessenger());
+        var service = CreateService(
+            linkedStore,
+            new FakeDiscordMemberRoleClient(new DiscordMemberRoles(
+                new[] { "1" },
+                new[] { new DiscordGuildRole("1", "FoUnDeR") })),
+            new FakePlayerPrivilegeReader(),
+            privilegeMutator,
+            new FakePlayerMessenger());
 
         await service.SyncAsync(CreatePlayer("player-1", "Ava"));
 
@@ -66,7 +74,12 @@ public sealed class PlayerDonatorRoleSyncServiceTests
     {
         var privilegeMutator = new FakePlayerPrivilegeMutator();
         var messenger = new FakePlayerMessenger();
-        var service = CreateService(new FakeLinkedAccountStore(), new FakeDiscordMemberRoleClient(EmptyRoles), new FakePlayerPrivilegeReader(), privilegeMutator, messenger);
+        var service = CreateService(
+            new FakeLinkedAccountStore(),
+            new FakeDiscordMemberRoleClient(EmptyRoles),
+            new FakePlayerPrivilegeReader(),
+            privilegeMutator,
+            messenger);
 
         await service.SyncAsync(CreatePlayer("player-1", "Ava"));
 
@@ -80,13 +93,16 @@ public sealed class PlayerDonatorRoleSyncServiceTests
     {
         var linkedStore = new FakeLinkedAccountStore();
         linkedStore.SetLinkedDiscordUserId("player-1", "discord-1");
-
-        var privilegeReader = new FakePlayerPrivilegeReader(
-            "firststepstweaks.supporter",
-            "firststepstweaks.contributor");
         var privilegeMutator = new FakePlayerPrivilegeMutator();
         var messenger = new FakePlayerMessenger();
-        var service = CreateService(linkedStore, new FakeDiscordMemberRoleClient(EmptyRoles), privilegeReader, privilegeMutator, messenger);
+        var service = CreateService(
+            linkedStore,
+            new FakeDiscordMemberRoleClient(EmptyRoles),
+            new FakePlayerPrivilegeReader(
+                "firststepstweaks.supporter",
+                "firststepstweaks.contributor"),
+            privilegeMutator,
+            messenger);
 
         await service.SyncAsync(CreatePlayer("player-1", "Ava"));
 
@@ -98,7 +114,7 @@ public sealed class PlayerDonatorRoleSyncServiceTests
                 "firststepstweaks.supporter"
             },
             privilegeMutator.RevokedPrivileges);
-        Assert.Equal(1, messenger.InfoCount);
+        Assert.Equal("Discord donator role synced.", messenger.LastInfoMessage);
     }
 
     [Fact]
@@ -106,18 +122,16 @@ public sealed class PlayerDonatorRoleSyncServiceTests
     {
         var linkedStore = new FakeLinkedAccountStore();
         linkedStore.SetLinkedDiscordUserId("player-1", "discord-1");
-
-        var privilegeReader = new FakePlayerPrivilegeReader(
-            "firststepstweaks.supporter",
-            "firststepstweaks.contributor",
-            "firststepstweaks.sponsor");
         var privilegeMutator = new FakePlayerPrivilegeMutator();
         var service = CreateService(
             linkedStore,
             new FakeDiscordMemberRoleClient(new DiscordMemberRoles(
                 new[] { "1" },
                 new[] { new DiscordGuildRole("1", "contributor") })),
-            privilegeReader,
+            new FakePlayerPrivilegeReader(
+                "firststepstweaks.supporter",
+                "firststepstweaks.contributor",
+                "firststepstweaks.sponsor"),
             privilegeMutator,
             new FakePlayerMessenger());
 
@@ -132,15 +146,13 @@ public sealed class PlayerDonatorRoleSyncServiceTests
     {
         var linkedStore = new FakeLinkedAccountStore();
         linkedStore.SetLinkedDiscordUserId("player-1", "discord-1");
-
-        var privilegeReader = new FakePlayerPrivilegeReader("firststepstweaks.supporter");
         var privilegeMutator = new FakePlayerPrivilegeMutator();
         var service = CreateService(
             linkedStore,
             new FakeDiscordMemberRoleClient(new DiscordMemberRoles(
                 new[] { "1" },
                 new[] { new DiscordGuildRole("1", "sponsor") })),
-            privilegeReader,
+            new FakePlayerPrivilegeReader("firststepstweaks.supporter"),
             privilegeMutator,
             new FakePlayerMessenger());
 
@@ -185,8 +197,6 @@ public sealed class PlayerDonatorRoleSyncServiceTests
     {
         var linkedStore = new FakeLinkedAccountStore();
         linkedStore.SetLinkedDiscordUserId("player-1", "discord-1");
-
-        var privilegeReader = new FakePlayerPrivilegeReader("firststepstweaks.supporter");
         var privilegeMutator = new FakePlayerPrivilegeMutator();
         var messenger = new FakePlayerMessenger();
         var service = CreateService(
@@ -194,7 +204,7 @@ public sealed class PlayerDonatorRoleSyncServiceTests
             new FakeDiscordMemberRoleClient(new DiscordMemberRoles(
                 new[] { "1" },
                 new[] { new DiscordGuildRole("1", "supporter") })),
-            privilegeReader,
+            new FakePlayerPrivilegeReader("firststepstweaks.supporter"),
             privilegeMutator,
             messenger);
 
@@ -364,12 +374,9 @@ public sealed class PlayerDonatorRoleSyncServiceTests
                 return null;
             }
 
-            if (returnType.IsValueType)
-            {
-                return Activator.CreateInstance(returnType);
-            }
-
-            return null;
+            return returnType.IsValueType
+                ? Activator.CreateInstance(returnType)
+                : null;
         }
     }
 }

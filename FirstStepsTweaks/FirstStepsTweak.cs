@@ -1,3 +1,4 @@
+using System;
 using FirstStepsTweaks.Commands;
 using FirstStepsTweaks.Config;
 using FirstStepsTweaks.Discord;
@@ -8,10 +9,12 @@ using Vintagestory.API.Server;
 
 namespace FirstStepsTweaks
 {
+    #nullable enable
     public class FirstStepsTweaks : ModSystem
     {
         private const string ConfigFileName = "firststepstweaks.json";
         private const string LegacyConfigFileName = "FirstStepsTweaks.json";
+        private AgentBridgeFeature? agentBridgeFeature;
 
         public override void StartServerSide(ICoreServerAPI api)
         {
@@ -30,6 +33,18 @@ namespace FirstStepsTweaks
             {
                 new GravestoneFeature(api, config, runtime).Register();
             }
+
+            // The bridge code stays wired into startup so future re-enable work only needs
+            // to change the availability policy instead of rebuilding the registration path.
+            agentBridgeFeature = new AgentBridgeFeature(api, config);
+            agentBridgeFeature.Register();
+        }
+
+        public override void Dispose()
+        {
+            agentBridgeFeature?.Dispose();
+            agentBridgeFeature = null;
+            base.Dispose();
         }
 
         private FirstStepsTweaksConfig LoadConfig(ICoreServerAPI api)
@@ -58,8 +73,15 @@ namespace FirstStepsTweaks
         private FirstStepsTweaksConfig ApplyConfigUpgrades(ICoreServerAPI api, FirstStepsTweaksConfig config)
         {
             bool changed = false;
+            var agentBridgeConfigUpgrader = new AgentBridgeConfigUpgrader();
             var joinConfigUpgrader = new JoinConfigUpgrader();
             var teleportConfigUpgrader = new TeleportConfigUpgrader();
+            var rtpConfigUpgrader = new RtpConfigUpgrader();
+
+            if (agentBridgeConfigUpgrader.TryUpgradeLegacyLoopbackPort(config))
+            {
+                changed = true;
+            }
 
             if (joinConfigUpgrader.TryUpgradeReturningJoinMessage(config))
             {
@@ -67,6 +89,11 @@ namespace FirstStepsTweaks
             }
 
             if (teleportConfigUpgrader.TryUpgradeDonatorWarmupSeconds(config))
+            {
+                changed = true;
+            }
+
+            if (rtpConfigUpgrader.TryUpgradeLegacyDefaults(config))
             {
                 changed = true;
             }
@@ -126,7 +153,7 @@ namespace FirstStepsTweaks
             );
             api.Permissions.RegisterPrivilege(
                 TeleportBypass.Privilege,
-                "Allows the player to bypass teleport cooldown timers (for example, /rtp cooldown).",
+                "Allows the player to bypass /rtp cooldown timers.",
                 true
             );
         }

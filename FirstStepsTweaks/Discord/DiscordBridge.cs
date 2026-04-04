@@ -34,6 +34,7 @@ namespace FirstStepsTweaks.Discord
         private bool worldStateInitialized;
         private int lastDayNumber;
         private string lastSeasonName;
+        private bool isRegistered;
 
         public DiscordBridge(ICoreServerAPI api, DiscordPlayerAvatarService avatarService, DiscordRelayMessageNormalizer relayMessageNormalizer)
         {
@@ -47,24 +48,7 @@ namespace FirstStepsTweaks.Discord
             configurationValidator = new DiscordRelayConfigurationValidator();
 
             LoadConfig();
-            if (IsConfiguredForGameToDiscordRelay() && config.RelayGameToDiscord)
-            {
-                api.Event.PlayerJoin += OnPlayerJoin;
-                api.Event.PlayerDisconnect += OnPlayerDisconnect;
-                api.Event.PlayerDeath += OnPlayerDeath;
-            }
             RestoreLastMessageId();
-
-            if (IsConfiguredForDiscordToGameRelay() && config.RelayDiscordToGame)
-            {
-                api.Event.RegisterGameTickListener(OnDiscordPollTick, config.PollMs);
-            }
-
-            if (IsConfiguredForGameToDiscordRelay() && config.RelayGameToDiscord && config.RelayWorldUpdates)
-            {
-                int pollMs = Math.Max(1000, config.WorldUpdatePollMs);
-                api.Event.RegisterGameTickListener(OnWorldUpdateTick, pollMs);
-            }
         }
 
         internal DiscordBridge(
@@ -88,6 +72,35 @@ namespace FirstStepsTweaks.Discord
             this.config = config;
 
             RestoreLastMessageId();
+        }
+
+        public void Register()
+        {
+            if (isRegistered)
+            {
+                return;
+            }
+
+            isRegistered = true;
+
+            if (IsConfiguredForGameToDiscordRelay() && config.RelayGameToDiscord)
+            {
+                api.Event.PlayerChat += OnPlayerChat;
+                api.Event.PlayerJoin += OnPlayerJoin;
+                api.Event.PlayerDisconnect += OnPlayerDisconnect;
+                api.Event.PlayerDeath += OnPlayerDeath;
+            }
+
+            if (IsConfiguredForDiscordToGameRelay() && config.RelayDiscordToGame)
+            {
+                api.Event.RegisterGameTickListener(OnDiscordPollTick, config.PollMs);
+            }
+
+            if (IsConfiguredForGameToDiscordRelay() && config.RelayGameToDiscord && config.RelayWorldUpdates)
+            {
+                int pollMs = Math.Max(1000, config.WorldUpdatePollMs);
+                api.Event.RegisterGameTickListener(OnWorldUpdateTick, pollMs);
+            }
         }
 
         // =========================================================

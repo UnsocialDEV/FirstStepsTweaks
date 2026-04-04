@@ -1,4 +1,5 @@
 using System;
+using FirstStepsTweaks.Infrastructure.Coordinates;
 using FirstStepsTweaks.Infrastructure.Messaging;
 using FirstStepsTweaks.Services;
 using Vintagestory.API.Config;
@@ -10,11 +11,18 @@ namespace FirstStepsTweaks.Infrastructure.Teleport
     {
         private readonly ICoreServerAPI api;
         private readonly IPlayerMessenger messenger;
+        private readonly IWorldCoordinateReader coordinateReader;
 
         public TeleportWarmupService(ICoreServerAPI api, IPlayerMessenger messenger)
+            : this(api, messenger, new WorldCoordinateReader())
+        {
+        }
+
+        public TeleportWarmupService(ICoreServerAPI api, IPlayerMessenger messenger, IWorldCoordinateReader coordinateReader)
         {
             this.api = api;
             this.messenger = messenger;
+            this.coordinateReader = coordinateReader ?? new WorldCoordinateReader();
         }
 
         public void Begin(TeleportWarmupRequest request)
@@ -32,9 +40,12 @@ namespace FirstStepsTweaks.Infrastructure.Teleport
                 return;
             }
 
-            double startX = request.Player.Entity.Pos.X;
-            double startY = request.Player.Entity.Pos.Y;
-            double startZ = request.Player.Entity.Pos.Z;
+            var startPosition = coordinateReader.GetExactPosition(request.Player);
+            if (startPosition == null)
+            {
+                return;
+            }
+
             int secondsRemaining = request.WarmupSeconds;
             long listenerId = 0L;
 
@@ -49,9 +60,16 @@ namespace FirstStepsTweaks.Infrastructure.Teleport
                     return;
                 }
 
-                double dx = Math.Abs(request.Player.Entity.Pos.X - startX);
-                double dy = Math.Abs(request.Player.Entity.Pos.Y - startY);
-                double dz = Math.Abs(request.Player.Entity.Pos.Z - startZ);
+                var currentPosition = coordinateReader.GetExactPosition(request.Player);
+                if (currentPosition == null)
+                {
+                    api.Event.UnregisterGameTickListener(listenerId);
+                    return;
+                }
+
+                double dx = Math.Abs(currentPosition.X - startPosition.X);
+                double dy = Math.Abs(currentPosition.Y - startPosition.Y);
+                double dz = Math.Abs(currentPosition.Z - startPosition.Z);
 
                 if (dx > request.CancelMoveThreshold || dy > request.CancelMoveThreshold || dz > request.CancelMoveThreshold)
                 {
