@@ -62,13 +62,15 @@ namespace FirstStepsTweaks.Features
                 new LandClaimEscapeService(runtime.LandClaimAccessor, new TeleportColumnSafetyScanner(api), new LandClaimEscapePlanner(), runtime.CoordinateReader));
             warpCommands = new WarpCommands(api, config, new WarpStore(api), runtime.Messenger, runtime.BackLocationStore, runtime.TeleportWarmupService, warmupResolver, runtime.CoordinateReader);
             var rtpConfig = config?.Rtp ?? new RtpConfig();
-            var rtpPlanner = new RtpColumnPlanner(rtpConfig);
+            var rtpPlanner = new RtpColumnPlanner(rtpConfig, api.WorldManager.ChunkSize);
             var rtpResolver = new RtpDestinationResolver(
                 rtpConfig,
                 rtpPlanner,
                 new RtpColumnSafetyScanner(api),
                 runtime.LandClaimAccessor,
-                runtime.CoordinateReader);
+                runtime.CoordinateReader,
+                new RtpCenterResolver(rtpConfig, api),
+                api.Logger);
             rtpCommands = new RtpCommands(
                 api,
                 new RtpTeleportService(
@@ -79,7 +81,9 @@ namespace FirstStepsTweaks.Features
                     playerTeleporter,
                     warmupResolver,
                     new RtpCooldownStore(),
-                    rtpResolver));
+                    rtpResolver,
+                    runtime.DelayedPlayerActionScheduler,
+                    api.Logger));
             adminTeleportCommands = new AdminTeleportCommands(
                 api,
                 new AdminTeleportService(runtime.PlayerLookup, runtime.BackLocationStore, playerTeleporter, runtime.Messenger, runtime.CoordinateReader));

@@ -18,14 +18,15 @@ namespace FirstStepsTweaks.Tests;
 public sealed class RtpDestinationResolverTests
 {
     [Fact]
-    public void TryResolveDestination_SkipsClaimedSafeDestination_AndReturnsNextUnclaimed()
+    public void ResolveDestination_SkipsClaimedSafeDestination_AndReturnsNextUnclaimed()
     {
+        var sharedOffsets = new[] { new Vec2i(16, 16) };
         var resolver = new RtpDestinationResolver(
             new RtpConfig(),
             new FakePlanner(
-                new BlockPos(1, 0, 0, 0),
-                new BlockPos(2, 0, 0, 0)),
-            new FakeScanner(new Dictionary<(int X, int Z), Vec3d>
+                new RtpChunkCandidate(1, 0, 0, sharedOffsets),
+                new RtpChunkCandidate(2, 0, 0, sharedOffsets)),
+            new FakeScanner(new Dictionary<(int ChunkX, int ChunkZ), Vec3d>
             {
                 [(1, 0)] = new Vec3d(1.5, 90, 0.5),
                 [(2, 0)] = new Vec3d(2.5, 91, 0.5)
@@ -33,41 +34,87 @@ public sealed class RtpDestinationResolverTests
             new FakeLandClaimAccessor(pos =>
                 pos.X == 1 && pos.Z == 0
                     ? new LandClaimInfo("claim", "Claimed", "owner", "Owner")
-                    : LandClaimInfo.None));
+                    : LandClaimInfo.None),
+            new FakeWorldCoordinateReader(new Vec3d(0.5, 80, 0.5), 0),
+            new FakeCenterResolver(new Vec2d(0.5, 0.5)));
 
-        bool result = resolver.TryResolveDestination(CreatePlayer(0.5, 80, 0.5), out Vec3d destination);
+        RtpDestinationResolutionResult result = resolver.ResolveDestination(CreatePlayer(0.5, 80, 0.5));
 
-        Assert.True(result);
-        Assert.NotNull(destination);
-        Assert.Equal(2.5, destination.X);
-        Assert.Equal(91, destination.Y);
-        Assert.Equal(0.5, destination.Z);
+        Assert.True(result.Success);
+        Assert.NotNull(result.Destination);
+        Assert.Equal(2.5, result.Destination.X);
+        Assert.Equal(91, result.Destination.Y);
+        Assert.Equal(0.5, result.Destination.Z);
+        Assert.Equal(1, result.ClaimRejectedCount);
     }
 
     [Fact]
-    public void TryResolveDestination_UsesCoordinateReaderDimension()
+    public void ResolveDestination_UsesCoordinateReaderDimension()
     {
         var coordinateReader = new FakeWorldCoordinateReader(new Vec3d(5.5, 80, 6.5), 9);
-        var planner = new RecordingPlanner(new BlockPos(2, 0, 0, 9));
+        var planner = new RecordingPlanner(new RtpChunkCandidate(2, 0, 9, new[] { new Vec2i(16, 16) }));
         var resolver = new RtpDestinationResolver(
             new RtpConfig { UsePlayerPositionAsCenter = true },
             planner,
-            new FakeScanner(new Dictionary<(int X, int Z), Vec3d>
+            new FakeScanner(new Dictionary<(int ChunkX, int ChunkZ), Vec3d>
             {
                 [(2, 0)] = new Vec3d(2.5, 90, 0.5)
             }),
             new FakeLandClaimAccessor(_ => LandClaimInfo.None),
-            coordinateReader);
+            coordinateReader,
+            new FakeCenterResolver(new Vec2d(5.5, 6.5)));
 
-        bool result = resolver.TryResolveDestination(CreatePlayer(0.5, 80, 0.5), out Vec3d destination);
+        RtpDestinationResolutionResult result = resolver.ResolveDestination(CreatePlayer(0.5, 80, 0.5));
 
-        Assert.True(result);
-        Assert.NotNull(destination);
+        Assert.True(result.Success);
+        Assert.NotNull(result.Destination);
         Assert.Equal(9, planner.LastDimension);
         Assert.Equal(5.5, planner.LastCenterX);
         Assert.Equal(6.5, planner.LastCenterZ);
         Assert.True(coordinateReader.PlayerPositionRequested);
         Assert.True(coordinateReader.PlayerDimensionRequested);
+        Assert.NotNull(result.SearchSession);
+    }
+
+    [Fact]
+    public void ResolveDestination_ReturnsPendingAndUnsafeCounts_ForCurrentBatch()
+    {
+        var sharedOffsets = new[] { new Vec2i(16, 16) };
+        var searchSession = new RtpSearchSession(
+            new Vec2d(512000, 512000),
+            new Vec3d(10, 80, 20),
+            0,
+            new[]
+            {
+                new RtpChunkCandidate(1, 0, 0, sharedOffsets),
+                new RtpChunkCandidate(2, 0, 0, sharedOffsets)
+            });
+
+        var resolver = new RtpDestinationResolver(
+            new RtpConfig(),
+            new FakePlanner(),
+            new ResultScanner(
+                new RtpColumnSafetyScanResult
+                {
+                    FailureKind = RtpColumnSafetyFailureKind.PendingChunkLoad,
+                    FailureDetail = "pending"
+                },
+                new RtpColumnSafetyScanResult
+                {
+                    FailureKind = RtpColumnSafetyFailureKind.UnsafeTerrain,
+                    FailureDetail = "unsafe"
+                }),
+            new FakeLandClaimAccessor(_ => LandClaimInfo.None),
+            new FakeWorldCoordinateReader(new Vec3d(10, 80, 20), 0),
+            new FakeCenterResolver(new Vec2d(512000, 512000)));
+
+        RtpDestinationResolutionResult result = resolver.ResolveDestination(CreatePlayer(10, 80, 20), searchSession);
+
+        Assert.False(result.Success);
+        Assert.Equal(1, result.PendingChunkCount);
+        Assert.Equal(1, result.UnsafeTerrainCount);
+        Assert.Equal(0, result.ClaimRejectedCount);
+        Assert.Same(searchSession, result.SearchSession);
     }
 
     private static IServerPlayer CreatePlayer(double x, double y, double z)
@@ -88,26 +135,26 @@ public sealed class RtpDestinationResolverTests
 
     private sealed class FakePlanner : IRtpColumnPlanner
     {
-        private readonly IReadOnlyList<BlockPos> columns;
+        private readonly IReadOnlyList<RtpChunkCandidate> chunkCandidates;
 
-        public FakePlanner(params BlockPos[] columns)
+        public FakePlanner(params RtpChunkCandidate[] chunkCandidates)
         {
-            this.columns = columns;
+            this.chunkCandidates = chunkCandidates;
         }
 
-        public IReadOnlyList<BlockPos> PlanColumns(double centerX, double centerZ, int dimension)
+        public IReadOnlyList<RtpChunkCandidate> PlanColumns(double centerX, double centerZ, int dimension)
         {
-            return columns;
+            return chunkCandidates;
         }
     }
 
     private sealed class RecordingPlanner : IRtpColumnPlanner
     {
-        private readonly IReadOnlyList<BlockPos> columns;
+        private readonly IReadOnlyList<RtpChunkCandidate> chunkCandidates;
 
-        public RecordingPlanner(params BlockPos[] columns)
+        public RecordingPlanner(params RtpChunkCandidate[] chunkCandidates)
         {
-            this.columns = columns;
+            this.chunkCandidates = chunkCandidates;
         }
 
         public double LastCenterX { get; private set; }
@@ -116,29 +163,59 @@ public sealed class RtpDestinationResolverTests
 
         public int LastDimension { get; private set; }
 
-        public IReadOnlyList<BlockPos> PlanColumns(double centerX, double centerZ, int dimension)
+        public IReadOnlyList<RtpChunkCandidate> PlanColumns(double centerX, double centerZ, int dimension)
         {
             LastCenterX = centerX;
             LastCenterZ = centerZ;
             LastDimension = dimension;
-            return columns;
+            return chunkCandidates;
         }
     }
 
     private sealed class FakeScanner : IRtpColumnSafetyScanner
     {
-        private readonly IReadOnlyDictionary<(int X, int Z), Vec3d> destinations;
+        private readonly IReadOnlyDictionary<(int ChunkX, int ChunkZ), Vec3d> destinations;
 
-        public FakeScanner(IReadOnlyDictionary<(int X, int Z), Vec3d> destinations)
+        public FakeScanner(IReadOnlyDictionary<(int ChunkX, int ChunkZ), Vec3d> destinations)
         {
             this.destinations = destinations;
         }
 
-        public Vec3d FindSafeDestination(int x, int z, int dimension)
+        public RtpColumnSafetyScanResult ScanCandidate(RtpChunkCandidate candidate)
         {
-            return destinations.TryGetValue((x, z), out Vec3d destination)
-                ? destination
-                : null;
+            return destinations.TryGetValue((candidate.ChunkX, candidate.ChunkZ), out Vec3d destination)
+                ? new RtpColumnSafetyScanResult { Destination = destination }
+                : new RtpColumnSafetyScanResult { FailureKind = RtpColumnSafetyFailureKind.UnsafeTerrain, FailureDetail = "fake scanner found no safe destination" };
+        }
+    }
+
+    private sealed class ResultScanner : IRtpColumnSafetyScanner
+    {
+        private readonly Queue<RtpColumnSafetyScanResult> results;
+
+        public ResultScanner(params RtpColumnSafetyScanResult[] results)
+        {
+            this.results = new Queue<RtpColumnSafetyScanResult>(results);
+        }
+
+        public RtpColumnSafetyScanResult ScanCandidate(RtpChunkCandidate candidate)
+        {
+            return results.Dequeue();
+        }
+    }
+
+    private sealed class FakeCenterResolver : IRtpCenterResolver
+    {
+        private readonly Vec2d center;
+
+        public FakeCenterResolver(Vec2d center)
+        {
+            this.center = center;
+        }
+
+        public Vec2d Resolve(Vec3d currentPosition)
+        {
+            return center;
         }
     }
 
@@ -202,6 +279,34 @@ public sealed class RtpDestinationResolverTests
         public int? GetDimension(Entity entity)
         {
             return dimension;
+        }
+    }
+
+    private class FakeWorldManagerApi : DispatchProxy
+    {
+        public int MapSizeX { get; set; }
+
+        public int MapSizeZ { get; set; }
+
+        public static IWorldManagerAPI Create(int mapSizeX, int mapSizeZ)
+        {
+            var proxy = DispatchProxy.Create<IWorldManagerAPI, FakeWorldManagerApi>();
+            var proxyState = (FakeWorldManagerApi)(object)proxy;
+            proxyState.MapSizeX = mapSizeX;
+            proxyState.MapSizeZ = mapSizeZ;
+            return proxy;
+        }
+
+        protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
+        {
+            return targetMethod?.Name switch
+            {
+                "get_MapSizeX" => MapSizeX,
+                "get_MapSizeZ" => MapSizeZ,
+                _ => targetMethod?.ReturnType.IsValueType == true
+                    ? Activator.CreateInstance(targetMethod.ReturnType)
+                    : null
+            };
         }
     }
 

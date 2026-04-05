@@ -1,9 +1,9 @@
-using Vintagestory.API.MathTools;
+using FirstStepsTweaks.Services;
 
 namespace FirstStepsTweaks.Infrastructure.Teleport
 {
     public interface IRtpColumnSafetyScanner
     {
-        Vec3d FindSafeDestination(int x, int z, int dimension);
+        RtpColumnSafetyScanResult ScanCandidate(RtpChunkCandidate candidate);
     }
 }

@@ -18,6 +18,7 @@ namespace FirstStepsTweaks.Features
             CoordinateDisplayFormatter = new WorldCoordinateDisplayFormatter(api);
             Messenger = new PlayerMessenger();
             PlayerLookup = new PlayerLookup(api);
+            DelayedPlayerActionScheduler = new DelayedPlayerActionScheduler(api);
             BackLocationStore = new BackLocationStore(CoordinateReader);
             TeleportWarmupService = new TeleportWarmupService(api, Messenger, CoordinateReader);
             LandClaimAccessor = new ReflectionLandClaimAccessor(api);
@@ -48,6 +49,8 @@ namespace FirstStepsTweaks.Features
         public IPlayerMessenger Messenger { get; }
 
         public IPlayerLookup PlayerLookup { get; }
+
+        public IDelayedPlayerActionScheduler DelayedPlayerActionScheduler { get; }
 
         public IBackLocationStore BackLocationStore { get; }
 

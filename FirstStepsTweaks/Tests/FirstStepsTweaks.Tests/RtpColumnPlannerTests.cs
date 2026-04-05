@@ -2,7 +2,6 @@ using System;
 using System.Linq;
 using FirstStepsTweaks.Config;
 using FirstStepsTweaks.Services;
-using Vintagestory.API.MathTools;
 using Xunit;
 
 namespace FirstStepsTweaks.Tests
@@ -10,49 +9,42 @@ namespace FirstStepsTweaks.Tests
     public sealed class RtpColumnPlannerTests
     {
         [Fact]
-        public void PlanColumns_ProducesOnlyColumnsWithinConfiguredRing()
+        public void PlanColumns_ProducesUniqueChunksWithinConfiguredRing()
         {
             var config = new RtpConfig
             {
                 MinRadius = 2500,
                 MaxRadius = 5000,
-                MaxAttempts = 32
+                MaxAttempts = 24
             };
-            var planner = new RtpColumnPlanner(config, new Random(1234));
+            var planner = new RtpColumnPlanner(config, chunkSize: 32, new Random(1234));
 
-            BlockPos[] columns = planner.PlanColumns(0, 0, 0).ToArray();
+            RtpChunkCandidate[] chunks = planner.PlanColumns(0, 0, 0).ToArray();
 
-            Assert.NotEmpty(columns);
-            Assert.All(columns, column =>
+            Assert.NotEmpty(chunks);
+            Assert.Equal(chunks.Length, chunks.Select(chunk => $"{chunk.ChunkX}:{chunk.ChunkZ}").Distinct().Count());
+            Assert.All(chunks, chunk =>
             {
-                double distance = Math.Sqrt(((column.X + 0.5) * (column.X + 0.5)) + ((column.Z + 0.5) * (column.Z + 0.5)));
+                double centerX = (chunk.ChunkX * 32) + 16;
+                double centerZ = (chunk.ChunkZ * 32) + 16;
+                double distance = Math.Sqrt((centerX * centerX) + (centerZ * centerZ));
                 Assert.InRange(distance, config.MinRadius, config.MaxRadius);
             });
         }
 
         [Fact]
-        public void PlanColumns_HonorsNonZeroCenter()
+        public void PlanColumns_IncludesFixedChunkSampleOffsets()
         {
-            var config = new RtpConfig
-            {
-                MinRadius = 25,
-                MaxRadius = 40,
-                MaxAttempts = 16
-            };
-            var planner = new RtpColumnPlanner(config, new Random(4321));
+            var planner = new RtpColumnPlanner(new RtpConfig { MaxAttempts = 1 }, chunkSize: 32, new Random(4321));
 
-            const double centerX = 120.5;
-            const double centerZ = -340.5;
-            BlockPos[] columns = planner.PlanColumns(centerX, centerZ, 0).ToArray();
+            RtpChunkCandidate candidate = Assert.Single(planner.PlanColumns(0, 0, 0));
 
-            Assert.NotEmpty(columns);
-            Assert.All(columns, column =>
-            {
-                double dx = (column.X + 0.5) - centerX;
-                double dz = (column.Z + 0.5) - centerZ;
-                double distance = Math.Sqrt((dx * dx) + (dz * dz));
-                Assert.InRange(distance, config.MinRadius, config.MaxRadius);
-            });
+            Assert.Equal(5, candidate.SampleOffsets.Count);
+            Assert.Contains(candidate.SampleOffsets, offset => offset.X == 16 && offset.Y == 16);
+            Assert.Contains(candidate.SampleOffsets, offset => offset.X == 8 && offset.Y == 8);
+            Assert.Contains(candidate.SampleOffsets, offset => offset.X == 24 && offset.Y == 8);
+            Assert.Contains(candidate.SampleOffsets, offset => offset.X == 8 && offset.Y == 24);
+            Assert.Contains(candidate.SampleOffsets, offset => offset.X == 24 && offset.Y == 24);
         }
     }
 }

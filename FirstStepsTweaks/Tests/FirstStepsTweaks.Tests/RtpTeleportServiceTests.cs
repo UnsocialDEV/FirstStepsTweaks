@@ -4,6 +4,7 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using FirstStepsTweaks.Config;
 using FirstStepsTweaks.Infrastructure.Messaging;
+using FirstStepsTweaks.Infrastructure.Players;
 using FirstStepsTweaks.Infrastructure.Teleport;
 using FirstStepsTweaks.Services;
 using FirstStepsTweaks.Teleport;
@@ -36,13 +37,15 @@ public sealed class RtpTeleportServiceTests
             new FakePlayerTeleporter(),
             new PlayerTeleportWarmupResolver(),
             cooldownStore,
-            new FakeDestinationResolver(new Vec3d(100.5, 70, 200.5)));
+            new SuccessfulDestinationResolver(new Vec3d(100.5, 70, 200.5)),
+            new NoopDelayedPlayerActionScheduler());
 
         service.Execute(player);
 
         Assert.NotNull(warmupService.Request);
         Assert.False(backLocationStore.RecordCalled);
         Assert.False(warmupService.Request!.AllowBypass);
+        Assert.Equal("Found a safe spot. Teleporting in 10 seconds. Don't move.", warmupService.Request.WarmupMessage);
         Assert.Contains("You bypassed the /rtp cooldown.", GetPlayerProxy(player).SentMessages);
     }
 
@@ -66,13 +69,15 @@ public sealed class RtpTeleportServiceTests
             playerTeleporter,
             new PlayerTeleportWarmupResolver(),
             cooldownStore,
-            new FakeDestinationResolver(new Vec3d(100.5, 70, 200.5)));
+            new SuccessfulDestinationResolver(new Vec3d(100.5, 70, 200.5)),
+            new NoopDelayedPlayerActionScheduler());
 
         service.Execute(player);
 
         Assert.Null(warmupService.Request);
         Assert.True(backLocationStore.RecordCalled);
-        Assert.Contains("Teleported to a random location.", messenger.InfoMessages);
+        Assert.Contains("Searching for a safe place to drop you. This can take a few seconds.", messenger.InfoMessages);
+        Assert.Contains("Teleported you to a safe random location.", messenger.InfoMessages);
         Assert.Contains("You bypassed the /rtp cooldown.", GetPlayerProxy(player).SentMessages);
         Assert.True(cooldownStore.TryGetLastUse(player.PlayerUID, out long updatedUse));
         Assert.True(updatedUse >= previousUse);
@@ -80,6 +85,64 @@ public sealed class RtpTeleportServiceTests
         Assert.Equal(100.5, playerTeleporter.LastDestination!.X);
         Assert.Equal(70, playerTeleporter.LastDestination.Y);
         Assert.Equal(200.5, playerTeleporter.LastDestination.Z);
+    }
+
+    [Fact]
+    public void Execute_RetriesUsingSameSearchSession_WhenChunksAreStillLoading()
+    {
+        var config = CreateConfig(useWarmup: false);
+        var messenger = new FakePlayerMessenger();
+        var backLocationStore = new FakeBackLocationStore();
+        var warmupService = new FakeTeleportWarmupService();
+        var playerTeleporter = new FakePlayerTeleporter();
+        var cooldownStore = new RtpCooldownStore();
+        var player = CreatePlayer(hasBypassPrivilege: false, 1, 65, 1);
+        var scheduler = new ImmediateDelayedPlayerActionScheduler(player);
+        var resolver = new RetryAwareDestinationResolver();
+        var service = new RtpTeleportService(
+            config,
+            messenger,
+            backLocationStore,
+            warmupService,
+            playerTeleporter,
+            new PlayerTeleportWarmupResolver(),
+            cooldownStore,
+            resolver,
+            scheduler);
+
+        service.Execute(player);
+
+        Assert.Equal(2, resolver.CallCount);
+        Assert.NotNull(resolver.InitialSession);
+        Assert.NotNull(resolver.RetrySession);
+        Assert.Same(resolver.InitialSession!.ChunkCandidates, resolver.RetrySession!.ChunkCandidates);
+        Assert.Equal(resolver.InitialSession.BatchStartIndex, resolver.RetrySession.BatchStartIndex);
+        Assert.Equal(1, resolver.RetrySession.BatchRetryCount);
+        Assert.True(backLocationStore.RecordCalled);
+        Assert.Equal(1, playerTeleporter.CallCount);
+        Assert.Contains("Searching for a safe place to drop you. This can take a few seconds.", messenger.InfoMessages);
+        Assert.Contains("Teleported you to a safe random location.", messenger.InfoMessages);
+    }
+
+    [Fact]
+    public void Execute_AdvancesToNextBatch_BeforeFailingSearch()
+    {
+        var config = CreateConfig(useWarmup: false);
+        var messenger = new FakePlayerMessenger();
+        var service = new RtpTeleportService(
+            config,
+            messenger,
+            new FakeBackLocationStore(),
+            new FakeTeleportWarmupService(),
+            new FakePlayerTeleporter(),
+            new PlayerTeleportWarmupResolver(),
+            new RtpCooldownStore(),
+            new BatchAdvanceDestinationResolver(),
+            new NoopDelayedPlayerActionScheduler());
+
+        service.Execute(CreatePlayer(hasBypassPrivilege: false, 1, 65, 1));
+
+        Assert.Contains("Couldn't find a safe place this time. Please try again in a moment.", messenger.InfoMessages);
     }
 
     private static FirstStepsTweaksConfig CreateConfig(bool useWarmup)
@@ -130,19 +193,116 @@ public sealed class RtpTeleportServiceTests
         return entity;
     }
 
-    private sealed class FakeDestinationResolver : IRtpDestinationResolver
+    private sealed class SuccessfulDestinationResolver : IRtpDestinationResolver
     {
         private readonly Vec3d destination;
 
-        public FakeDestinationResolver(Vec3d destination)
+        public SuccessfulDestinationResolver(Vec3d destination)
         {
             this.destination = destination;
         }
 
-        public bool TryResolveDestination(IServerPlayer player, out Vec3d destination)
+        public RtpDestinationResolutionResult ResolveDestination(IServerPlayer player, RtpSearchSession searchSession = null)
         {
-            destination = this.destination;
-            return true;
+            return new RtpDestinationResolutionResult
+            {
+                SearchSession = searchSession,
+                Destination = destination
+            };
+        }
+    }
+
+    private sealed class RetryAwareDestinationResolver : IRtpDestinationResolver
+    {
+        public RtpSearchSession? InitialSession { get; private set; }
+
+        public RtpSearchSession? RetrySession { get; private set; }
+
+        public int CallCount { get; private set; }
+
+        public RtpDestinationResolutionResult ResolveDestination(IServerPlayer player, RtpSearchSession searchSession = null)
+        {
+            CallCount++;
+
+            if (CallCount == 1)
+            {
+                InitialSession = new RtpSearchSession(
+                    new Vec2d(512000, 512000),
+                    new Vec3d(1, 65, 1),
+                    0,
+                    new[] { new RtpChunkCandidate(10, 10, 0, new[] { new Vec2i(16, 16) }) });
+
+                return new RtpDestinationResolutionResult
+                {
+                    SearchSession = InitialSession,
+                    PendingChunkCount = 1
+                };
+            }
+
+            RetrySession = searchSession;
+            return new RtpDestinationResolutionResult
+            {
+                SearchSession = searchSession,
+                Destination = new Vec3d(100.5, 70, 200.5)
+            };
+        }
+    }
+
+    private sealed class BatchAdvanceDestinationResolver : IRtpDestinationResolver
+    {
+        public RtpDestinationResolutionResult ResolveDestination(IServerPlayer player, RtpSearchSession searchSession = null)
+        {
+            if (searchSession == null)
+            {
+                return new RtpDestinationResolutionResult
+                {
+                    SearchSession = new RtpSearchSession(
+                        new Vec2d(512000, 512000),
+                        new Vec3d(1, 65, 1),
+                        0,
+                        new[]
+                        {
+                            new RtpChunkCandidate(10, 10, 0, new[] { new Vec2i(16, 16) }),
+                            new RtpChunkCandidate(20, 20, 0, new[] { new Vec2i(16, 16) }),
+                            new RtpChunkCandidate(30, 30, 0, new[] { new Vec2i(16, 16) }),
+                            new RtpChunkCandidate(40, 40, 0, new[] { new Vec2i(16, 16) }),
+                            new RtpChunkCandidate(50, 50, 0, new[] { new Vec2i(16, 16) }),
+                            new RtpChunkCandidate(60, 60, 0, new[] { new Vec2i(16, 16) }),
+                            new RtpChunkCandidate(70, 70, 0, new[] { new Vec2i(16, 16) }),
+                            new RtpChunkCandidate(80, 80, 0, new[] { new Vec2i(16, 16) }),
+                            new RtpChunkCandidate(90, 90, 0, new[] { new Vec2i(16, 16) })
+                        }),
+                    UnsafeTerrainCount = 8
+                };
+            }
+
+            return new RtpDestinationResolutionResult
+            {
+                SearchSession = searchSession,
+                UnsafeTerrainCount = 1
+            };
+        }
+    }
+
+    private sealed class NoopDelayedPlayerActionScheduler : IDelayedPlayerActionScheduler
+    {
+        public void Schedule(string playerUid, int delayMs, Action<IServerPlayer> action)
+        {
+        }
+    }
+
+    private sealed class ImmediateDelayedPlayerActionScheduler : IDelayedPlayerActionScheduler
+    {
+        private readonly IServerPlayer player;
+
+        public ImmediateDelayedPlayerActionScheduler(IServerPlayer player)
+        {
+            this.player = player;
+        }
+
+        public void Schedule(string playerUid, int delayMs, Action<IServerPlayer> action)
+        {
+            action(player);
         }
     }
 

@@ -3,7 +3,7 @@ using Vintagestory.API.Server;
 
 namespace FirstStepsTweaks.Infrastructure.Players
 {
-    public sealed class DelayedPlayerActionScheduler
+    public sealed class DelayedPlayerActionScheduler : IDelayedPlayerActionScheduler
     {
         private readonly ICoreServerAPI api;
 

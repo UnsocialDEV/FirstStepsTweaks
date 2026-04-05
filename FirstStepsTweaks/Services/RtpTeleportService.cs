@@ -1,6 +1,7 @@
 using System;
 using FirstStepsTweaks.Config;
 using FirstStepsTweaks.Infrastructure.Messaging;
+using FirstStepsTweaks.Infrastructure.Players;
 using FirstStepsTweaks.Infrastructure.Teleport;
 using FirstStepsTweaks.Teleport;
 using Vintagestory.API.Common;
@@ -12,6 +13,9 @@ namespace FirstStepsTweaks.Services
 {
     public sealed class RtpTeleportService
     {
+        private const int ChunkLoadRetryDelayMs = 750;
+        private const int MaxChunkLoadRetriesPerBatch = 3;
+
         private readonly TeleportConfig teleportConfig;
         private readonly RtpConfig rtpConfig;
         private readonly IPlayerMessenger messenger;
@@ -21,6 +25,8 @@ namespace FirstStepsTweaks.Services
         private readonly PlayerTeleportWarmupResolver warmupResolver;
         private readonly RtpCooldownStore cooldownStore;
         private readonly IRtpDestinationResolver destinationResolver;
+        private readonly IDelayedPlayerActionScheduler delayedPlayerActionScheduler;
+        private readonly ILogger logger;
 
         public RtpTeleportService(
             FirstStepsTweaksConfig config,
@@ -30,7 +36,9 @@ namespace FirstStepsTweaks.Services
             IPlayerTeleporter playerTeleporter,
             PlayerTeleportWarmupResolver warmupResolver,
             RtpCooldownStore cooldownStore,
-            IRtpDestinationResolver destinationResolver)
+            IRtpDestinationResolver destinationResolver,
+            IDelayedPlayerActionScheduler delayedPlayerActionScheduler,
+            ILogger logger = null)
         {
             teleportConfig = config?.Teleport ?? new TeleportConfig();
             rtpConfig = config?.Rtp ?? new RtpConfig();
@@ -41,16 +49,68 @@ namespace FirstStepsTweaks.Services
             this.warmupResolver = warmupResolver;
             this.cooldownStore = cooldownStore;
             this.destinationResolver = destinationResolver;
+            this.delayedPlayerActionScheduler = delayedPlayerActionScheduler;
+            this.logger = logger;
         }
 
         public void Execute(IServerPlayer player)
+        {
+            Execute(player, null);
+        }
+
+        private void Execute(IServerPlayer player, RtpSearchSession searchSession)
         {
             if (player == null)
             {
                 return;
             }
 
-            int effectiveWarmupSeconds = warmupResolver.Resolve(player, teleportConfig);
+            bool initialSearch = searchSession == null;
+            if (initialSearch && !CanStartSearch(player))
+            {
+                return;
+            }
+
+            if (initialSearch)
+            {
+                messenger.SendInfo(player, "Searching for a safe place to drop you. This can take a few seconds.", GlobalConstants.InfoLogChatGroup, (int)EnumChatType.CommandSuccess);
+                messenger.SendGeneral(player, "Searching for a safe place to drop you. This can take a few seconds.", GlobalConstants.GeneralChatGroup, (int)EnumChatType.Notification);
+            }
+
+            RtpDestinationResolutionResult resolution = destinationResolver.ResolveDestination(player, searchSession);
+            if (resolution.Success)
+            {
+                CompleteTeleport(player, resolution.Destination);
+                return;
+            }
+
+            RtpSearchSession session = resolution.SearchSession;
+            if (session != null && resolution.PendingChunkCount > 0 && session.BatchRetryCount < MaxChunkLoadRetriesPerBatch && delayedPlayerActionScheduler != null)
+            {
+                delayedPlayerActionScheduler.Schedule(
+                    player.PlayerUID,
+                    ChunkLoadRetryDelayMs,
+                    retryPlayer => Execute(retryPlayer, session.AdvanceRetry()));
+                return;
+            }
+
+            if (session != null && session.HasNextBatch)
+            {
+                Execute(player, session.AdvanceBatch(resolution.PendingChunkCount, resolution.UnsafeTerrainCount, resolution.ClaimRejectedCount));
+                return;
+            }
+
+            if (session != null)
+            {
+                LogFinalFailure(player.PlayerUID, session, resolution);
+            }
+
+            messenger.SendInfo(player, "Couldn't find a safe place this time. Please try again in a moment.", GlobalConstants.InfoLogChatGroup, (int)EnumChatType.CommandError);
+            messenger.SendGeneral(player, "Couldn't find a safe place this time. Please try again in a moment.", GlobalConstants.GeneralChatGroup, (int)EnumChatType.Notification);
+        }
+
+        private bool CanStartSearch(IServerPlayer player)
+        {
             long nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             bool hasCooldownBypass = TeleportBypass.HasBypass(player);
 
@@ -68,18 +128,17 @@ namespace FirstStepsTweaks.Services
                         int remainingSeconds = (int)Math.Ceiling(remainingMs / 1000d);
                         messenger.SendInfo(player, $"You must wait {remainingSeconds}s before using /rtp again.", GlobalConstants.InfoLogChatGroup, (int)EnumChatType.CommandError);
                         messenger.SendGeneral(player, $"You must wait {remainingSeconds}s before using /rtp again.", GlobalConstants.GeneralChatGroup, (int)EnumChatType.Notification);
-                        return;
+                        return false;
                     }
                 }
             }
 
-            if (!destinationResolver.TryResolveDestination(player, out Vec3d destination))
-            {
-                messenger.SendInfo(player, "Failed to find a safe random destination. Try again.", GlobalConstants.InfoLogChatGroup, (int)EnumChatType.CommandError);
-                messenger.SendGeneral(player, "Failed to find a safe random destination. Try again.", GlobalConstants.GeneralChatGroup, (int)EnumChatType.Notification);
-                return;
-            }
+            return true;
+        }
 
+        private void CompleteTeleport(IServerPlayer player, Vec3d destination)
+        {
+            int effectiveWarmupSeconds = warmupResolver.Resolve(player, teleportConfig);
             if (rtpConfig.UseWarmup && effectiveWarmupSeconds > 0)
             {
                 StartWarmupTeleport(player, destination, effectiveWarmupSeconds);
@@ -88,9 +147,9 @@ namespace FirstStepsTweaks.Services
 
             backLocationStore.RecordCurrentLocation(player);
             playerTeleporter.Teleport(player, destination);
-            messenger.SendInfo(player, "Teleported to a random location.", GlobalConstants.InfoLogChatGroup, (int)EnumChatType.CommandSuccess);
-            messenger.SendGeneral(player, "Teleported to a random location.", GlobalConstants.GeneralChatGroup, (int)EnumChatType.Notification);
-            cooldownStore.SetLastUse(player.PlayerUID, nowMs);
+            messenger.SendInfo(player, "Teleported you to a safe random location.", GlobalConstants.InfoLogChatGroup, (int)EnumChatType.CommandSuccess);
+            messenger.SendGeneral(player, "Teleported you to a safe random location.", GlobalConstants.GeneralChatGroup, (int)EnumChatType.Notification);
+            cooldownStore.SetLastUse(player.PlayerUID, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
         }
 
         private void StartWarmupTeleport(IServerPlayer player, Vec3d destination, int warmupSeconds)
@@ -98,10 +157,10 @@ namespace FirstStepsTweaks.Services
             teleportWarmupService.Begin(new TeleportWarmupRequest
             {
                 Player = player,
-                WarmupMessage = $"Teleporting to a random location in {warmupSeconds} seconds. Do not move.",
+                WarmupMessage = $"Found a safe spot. Teleporting in {warmupSeconds} seconds. Don't move.",
                 CountdownTemplate = "Teleporting in {0}...",
                 CancelMessage = "Teleport cancelled because you moved.",
-                SuccessIngameMessage = "Teleported to a random location.",
+                SuccessIngameMessage = "Teleported you to a safe random location.",
                 BypassContext = "/rtp cooldown",
                 WarmupSeconds = warmupSeconds,
                 TickIntervalMs = teleportConfig.TickIntervalMs,
@@ -119,6 +178,30 @@ namespace FirstStepsTweaks.Services
                     cooldownStore.SetLastUse(player.PlayerUID, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
                 }
             });
+        }
+
+        private void LogFinalFailure(string playerUid, RtpSearchSession session, RtpDestinationResolutionResult resolution)
+        {
+            int totalPendingChunks = session.PendingChunkCount + resolution.PendingChunkCount;
+            int totalUnsafeTerrain = session.UnsafeTerrainCount + resolution.UnsafeTerrainCount;
+            int totalClaimRejected = session.ClaimRejectedCount + resolution.ClaimRejectedCount;
+            int attemptedBatches = session.CompletedBatchCount + (session.HasCurrentBatch ? 1 : 0);
+
+            logger?.Warning(
+                $"[FirstStepsTweaks][RTP] Failed to find destination for player '{playerUid}'. " +
+                $"dimension={session.Dimension}, currentPosition={FormatVec3(session.CurrentPosition)}, center={FormatVec2(session.Center)}, " +
+                $"batchesTried={attemptedBatches}/{session.TotalBatchCount}, pendingChunks={totalPendingChunks}, " +
+                $"unsafeTerrain={totalUnsafeTerrain}, claimRejected={totalClaimRejected}.");
+        }
+
+        private static string FormatVec2(Vec2d value)
+        {
+            return value == null ? "<null>" : $"{value.X:0.##},{value.Y:0.##}";
+        }
+
+        private static string FormatVec3(Vec3d value)
+        {
+            return value == null ? "<null>" : $"{value.X:0.##},{value.Y:0.##},{value.Z:0.##}";
         }
     }
 }

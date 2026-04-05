@@ -94,7 +94,7 @@ namespace FirstStepsTweaks.Config
         public int MinRadius { get; set; } = DefaultMinRadius;
         public int MaxRadius { get; set; } = DefaultMaxRadius;
         public int MaxAttempts { get; set; } = 24;
-        public int CooldownSeconds { get; set; } = 300;
+        public int CooldownSeconds { get; set; } = 900;
         public bool UsePlayerPositionAsCenter { get; set; } = DefaultUsePlayerPositionAsCenter;
         public bool UseWarmup { get; set; } = true;
     }
