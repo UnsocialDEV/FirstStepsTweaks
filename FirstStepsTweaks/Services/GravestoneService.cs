@@ -15,7 +15,7 @@ using Vintagestory.API.Server;
 
 namespace FirstStepsTweaks.Services
 {
-    public sealed class GravestoneService
+    public sealed class GravestoneService : Commands.IGraveAdminGraveResolver
     {
         private readonly ICoreServerAPI api;
         private readonly CorpseConfig config;
@@ -75,6 +75,11 @@ namespace FirstStepsTweaks.Services
         public bool IsPubliclyClaimable(GraveData grave)
         {
             return grave != null && claimPolicy.IsPubliclyClaimable(grave);
+        }
+
+        public bool TryGetActiveGrave(string graveId, out GraveData grave)
+        {
+            return graveManager.TryGetById(graveId, out grave);
         }
 
         public bool TryDuplicateGraveItemsToPlayer(string graveId, IServerPlayer targetPlayer, out string message)
@@ -288,7 +293,7 @@ namespace FirstStepsTweaks.Services
             if (placement.MovedOutsideForeignClaim)
             {
                 string alertMessage = "You died inside a land claim you do not own, so your gravestone was placed outside the claim "
-                    + $"at {coordinateDisplayFormatter.FormatBlockPosition(gravePos)}.";
+                    + $"at {coordinateDisplayFormatter.FormatBlockPositionWithoutDimension(gravePos)}.";
                 messenger.SendDual(player, alertMessage, (int)EnumChatType.CommandSuccess, (int)EnumChatType.Notification);
             }
 

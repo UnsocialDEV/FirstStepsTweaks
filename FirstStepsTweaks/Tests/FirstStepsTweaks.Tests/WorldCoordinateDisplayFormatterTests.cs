@@ -44,6 +44,16 @@ public sealed class WorldCoordinateDisplayFormatterTests
         Assert.Equal("2:2,3,139", formatted);
     }
 
+    [Fact]
+    public void FormatBlockPositionWithoutDimension_FormatsCenteredCoordinatesWithoutDimensionPrefix()
+    {
+        var formatter = new WorldCoordinateDisplayFormatter(TestCoreServerApiFactory.Create(1024000, 1024000));
+
+        string formatted = formatter.FormatBlockPositionWithoutDimension(new Vintagestory.API.MathTools.BlockPos(512003, 3, 512139, 2));
+
+        Assert.Equal("3,3,139", formatted);
+    }
+
     private static class TestCoreServerApiFactory
     {
         public static ICoreServerAPI Create(int mapSizeX, int mapSizeZ)

@@ -11,5 +11,7 @@ namespace FirstStepsTweaks.Infrastructure.Coordinates
         string FormatBlockPosition(int dimension, int x, int y, int z);
 
         string FormatBlockPosition(BlockPos worldPosition);
+
+        string FormatBlockPositionWithoutDimension(BlockPos worldPosition);
     }
 }

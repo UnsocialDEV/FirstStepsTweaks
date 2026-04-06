@@ -4,8 +4,6 @@ using FirstStepsTweaks.Infrastructure.Players;
 using FirstStepsTweaks.Infrastructure.Teleport;
 using FirstStepsTweaks.Services;
 using System;
-using System.Linq;
-using System.Text;
 using Vintagestory.API.Common;
 using Vintagestory.API.Common.Entities;
 using Vintagestory.API.Config;
@@ -16,7 +14,8 @@ namespace FirstStepsTweaks.Commands
     public sealed class GravestoneCommands
     {
         private const string AdminPrivilege = "firststepstweaks.graveadmin";
-        private const string CurrentLocationSelector = "currentloc";
+        private const int DefaultListRadius = 100;
+        private const int DefaultListPage = 1;
 
         private readonly ICoreServerAPI api;
         private readonly GravestoneService gravestoneService;
@@ -25,6 +24,12 @@ namespace FirstStepsTweaks.Commands
         private readonly IBackLocationStore backLocationStore;
         private readonly IWorldCoordinateReader coordinateReader;
         private readonly IWorldCoordinateDisplayFormatter coordinateDisplayFormatter;
+        private readonly GraveAdminNearbyQuery nearbyQuery;
+        private readonly GraveAdminListSnapshotStore snapshotStore;
+        private readonly GraveAdminSelectorResolver selectorResolver;
+        private readonly GraveAdminPageFormatter pageFormatter;
+        private readonly GraveAdminRestoreTargetResolver restoreTargetResolver;
+        private readonly GraveAdminInfoPresenter infoPresenter;
 
         public GravestoneCommands(
             ICoreServerAPI api,
@@ -33,7 +38,13 @@ namespace FirstStepsTweaks.Commands
             IPlayerLookup playerLookup,
             IBackLocationStore backLocationStore,
             IWorldCoordinateReader coordinateReader,
-            IWorldCoordinateDisplayFormatter coordinateDisplayFormatter)
+            IWorldCoordinateDisplayFormatter coordinateDisplayFormatter,
+            GraveAdminNearbyQuery nearbyQuery,
+            GraveAdminListSnapshotStore snapshotStore,
+            GraveAdminSelectorResolver selectorResolver,
+            GraveAdminPageFormatter pageFormatter,
+            GraveAdminRestoreTargetResolver restoreTargetResolver,
+            GraveAdminInfoPresenter infoPresenter)
         {
             this.api = api;
             this.gravestoneService = gravestoneService;
@@ -42,6 +53,12 @@ namespace FirstStepsTweaks.Commands
             this.backLocationStore = backLocationStore;
             this.coordinateReader = coordinateReader ?? new WorldCoordinateReader();
             this.coordinateDisplayFormatter = coordinateDisplayFormatter ?? new WorldCoordinateDisplayFormatter(api);
+            this.nearbyQuery = nearbyQuery;
+            this.snapshotStore = snapshotStore;
+            this.selectorResolver = selectorResolver;
+            this.pageFormatter = pageFormatter;
+            this.restoreTargetResolver = restoreTargetResolver;
+            this.infoPresenter = infoPresenter;
         }
 
         public void Register()
@@ -52,8 +69,16 @@ namespace FirstStepsTweaks.Commands
                 .RequiresPlayer()
                 .RequiresPrivilege(AdminPrivilege)
                 .BeginSubCommand("list")
-                    .WithDescription("List active gravestones")
+                    .WithDescription("List nearby active gravestones")
+                    .WithArgs(
+                        api.ChatCommands.Parsers.OptionalInt("radius"),
+                        api.ChatCommands.Parsers.OptionalInt("page")
+                    )
                     .HandleWith(List)
+                .EndSubCommand()
+                .BeginSubCommand("info")
+                    .WithDescription("Show information for the gravestone you are currently looking at")
+                    .HandleWith(Info)
                 .EndSubCommand()
                 .BeginSubCommand("giveblock")
                     .WithDescription("Give gravestone block item(s) to a player")
@@ -64,7 +89,7 @@ namespace FirstStepsTweaks.Commands
                     .HandleWith(GiveBlock)
                 .EndSubCommand()
                 .BeginSubCommand("dupeitems")
-                    .WithDescription("Duplicate stored gravestone items to a player without removing the gravestone. Use currentloc <player> while looking at a gravestone, or <graveId> <player>.")
+                    .WithDescription("Duplicate stored gravestone items to a player without removing the gravestone. Use currentloc <player>, <graveNumber> <player>, or <graveId> <player>.")
                     .WithArgs(
                         api.ChatCommands.Parsers.Word("graveId"),
                         api.ChatCommands.Parsers.Word("player")
@@ -72,20 +97,20 @@ namespace FirstStepsTweaks.Commands
                     .HandleWith(DuplicateItems)
                 .EndSubCommand()
                 .BeginSubCommand("restore")
-                    .WithDescription("Restore gravestone items to a player and remove the gravestone. Use currentloc <player> while looking at a gravestone, or <graveId> <player>.")
+                    .WithDescription("Restore gravestone items to a player and remove the gravestone. Use currentloc [player], <graveNumber> [player], or <graveId> [player].")
                     .WithArgs(
                         api.ChatCommands.Parsers.Word("graveId"),
-                        api.ChatCommands.Parsers.Word("player")
+                        api.ChatCommands.Parsers.OptionalWord("player")
                     )
                     .HandleWith(Restore)
                 .EndSubCommand()
                 .BeginSubCommand("remove")
-                    .WithDescription("Remove a gravestone without restoring items. Use currentloc while looking at a gravestone, or provide <graveId>.")
+                    .WithDescription("Remove a gravestone without restoring items. Use currentloc while looking at a gravestone, or provide <graveNumber|graveId>.")
                     .WithArgs(api.ChatCommands.Parsers.OptionalWord("graveId"))
                     .HandleWith(Remove)
                 .EndSubCommand()
                 .BeginSubCommand("teleport")
-                    .WithDescription("Teleport directly to a gravestone. Use currentloc while looking at a gravestone, or provide <graveId>.")
+                    .WithDescription("Teleport directly to a gravestone. Use currentloc while looking at a gravestone, or provide <graveNumber|graveId>.")
                     .WithArgs(api.ChatCommands.Parsers.OptionalWord("graveId"))
                     .HandleWith(Teleport)
                 .EndSubCommand();
@@ -99,31 +124,42 @@ namespace FirstStepsTweaks.Commands
                 return TextCommandResult.Success();
             }
 
-            var graves = gravestoneService.GetActiveGraves();
-            if (graves.Count == 0)
+            if (!TryParsePositiveInt(args[0], DefaultListRadius, "Radius", out int radius, out string parseMessage)
+                || !TryParsePositiveInt(args[1], DefaultListPage, "Page", out int page, out parseMessage))
             {
-                SendBoth(caller, "No active gravestones found.");
+                SendBoth(caller, parseMessage);
                 return TextCommandResult.Success();
             }
 
-            var sb = new StringBuilder();
-            sb.AppendLine($"Active gravestones ({graves.Count}):");
-
-            long now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            foreach (GraveData grave in graves.OrderBy(grave => grave.CreatedUnixMs))
+            if (!nearbyQuery.TryQuery(caller, gravestoneService.GetActiveGraves(), gravestoneService.IsPubliclyClaimable, radius, out var entries, out string queryMessage))
             {
-                if (grave == null)
-                {
-                    continue;
-                }
-
-                long ageMinutes = Math.Max(0, (now - grave.CreatedUnixMs) / 60000L);
-                string claimState = gravestoneService.IsPubliclyClaimable(grave) ? "public" : "owner-only";
-                string displayPosition = coordinateDisplayFormatter.FormatBlockPosition(grave.Dimension, grave.X, grave.Y, grave.Z);
-                sb.AppendLine($"- {grave.GraveId} | owner={grave.OwnerName} | pos={displayPosition} | age={ageMinutes}m | {claimState}");
+                SendBoth(caller, queryMessage);
+                return TextCommandResult.Success();
             }
 
-            messenger.SendInfo(caller, sb.ToString().TrimEnd(), GlobalConstants.InfoLogChatGroup, (int)EnumChatType.Notification);
+            snapshotStore.Save(caller, radius, entries);
+
+            if (!pageFormatter.TryFormat(entries, radius, page, out string pageMessage))
+            {
+                SendBoth(caller, pageMessage);
+                return TextCommandResult.Success();
+            }
+
+            if (entries.Count == 0)
+            {
+                SendBoth(caller, pageMessage);
+                return TextCommandResult.Success();
+            }
+
+            messenger.SendInfo(caller, pageMessage, GlobalConstants.InfoLogChatGroup, (int)EnumChatType.Notification);
+            messenger.SendGeneral(caller, "Nearby gravestone details were sent to your Info log channel.", GlobalConstants.GeneralChatGroup, (int)EnumChatType.Notification);
+            return TextCommandResult.Success();
+        }
+
+        private TextCommandResult Info(TextCommandCallingArgs args)
+        {
+            IServerPlayer caller = args.Caller.Player as IServerPlayer;
+            infoPresenter.ShowLookedAtGraveInfo(caller);
             return TextCommandResult.Success();
         }
 
@@ -164,7 +200,7 @@ namespace FirstStepsTweaks.Commands
             string graveSelector = args[0] as string;
             string targetName = args[1] as string;
 
-            if (!TryResolveGraveSelector(caller, graveSelector, out string graveId, out string resolveMessage))
+            if (!selectorResolver.TryResolve(caller, graveSelector, out string graveId, out string resolveMessage))
             {
                 SendBoth(caller, resolveMessage);
                 return TextCommandResult.Success();
@@ -194,16 +230,21 @@ namespace FirstStepsTweaks.Commands
             string graveSelector = args[0] as string;
             string targetName = args[1] as string;
 
-            if (!TryResolveGraveSelector(caller, graveSelector, out string graveId, out string resolveMessage))
+            if (!selectorResolver.TryResolve(caller, graveSelector, out string graveId, out string resolveMessage))
             {
                 SendBoth(caller, resolveMessage);
                 return TextCommandResult.Success();
             }
 
-            IServerPlayer target = ResolveOnlinePlayer(targetName);
-            if (target == null)
+            if (!gravestoneService.TryGetActiveGrave(graveId, out GraveData grave) || grave == null)
             {
-                SendBoth(caller, "Target player is not online.");
+                SendBoth(caller, $"Gravestone '{graveId}' was not found.");
+                return TextCommandResult.Success();
+            }
+
+            if (!restoreTargetResolver.TryResolve(targetName, grave, out IServerPlayer target, out string targetMessage))
+            {
+                SendBoth(caller, targetMessage);
                 return TextCommandResult.Success();
             }
 
@@ -225,11 +266,11 @@ namespace FirstStepsTweaks.Commands
 
             if (string.IsNullOrWhiteSpace(graveSelector))
             {
-                SendBoth(caller, "Usage: /graveadmin remove currentloc while looking at a gravestone, or /graveadmin remove <graveId>.");
+                SendBoth(caller, "Usage: /graveadmin remove currentloc while looking at a gravestone, or /graveadmin remove <graveNumber|graveId>.");
                 return TextCommandResult.Success();
             }
 
-            if (!TryResolveGraveSelector(caller, graveSelector, out string graveId, out string resolveMessage))
+            if (!selectorResolver.TryResolve(caller, graveSelector, out string graveId, out string resolveMessage))
             {
                 SendBoth(caller, resolveMessage);
                 return TextCommandResult.Success();
@@ -247,11 +288,11 @@ namespace FirstStepsTweaks.Commands
 
             if (string.IsNullOrWhiteSpace(graveSelector))
             {
-                SendBoth(caller, "Usage: /graveadmin teleport currentloc while looking at a gravestone, or /graveadmin teleport <graveId>.");
+                SendBoth(caller, "Usage: /graveadmin teleport currentloc while looking at a gravestone, or /graveadmin teleport <graveNumber|graveId>.");
                 return TextCommandResult.Success();
             }
 
-            if (!TryResolveGraveSelector(caller, graveSelector, out string graveId, out string resolveMessage))
+            if (!selectorResolver.TryResolve(caller, graveSelector, out string graveId, out string resolveMessage))
             {
                 SendBoth(caller, resolveMessage);
                 return TextCommandResult.Success();
@@ -286,26 +327,6 @@ namespace FirstStepsTweaks.Commands
             return TextCommandResult.Success();
         }
 
-        private bool TryResolveGraveSelector(IServerPlayer caller, string selector, out string graveId, out string message)
-        {
-            graveId = string.Empty;
-            message = string.Empty;
-
-            if (string.IsNullOrWhiteSpace(selector))
-            {
-                message = "Specify a grave ID or use currentloc while looking at a gravestone.";
-                return false;
-            }
-
-            if (selector.Equals(CurrentLocationSelector, StringComparison.OrdinalIgnoreCase))
-            {
-                return gravestoneService.TryResolveTargetedGraveId(caller, out graveId, out message);
-            }
-
-            graveId = selector;
-            return true;
-        }
-
         private IServerPlayer ResolveOnlinePlayer(string query)
         {
             if (string.IsNullOrWhiteSpace(query))
@@ -319,6 +340,48 @@ namespace FirstStepsTweaks.Commands
         private void SendBoth(IServerPlayer player, string message)
         {
             messenger.SendDual(player, message, (int)EnumChatType.CommandSuccess, (int)EnumChatType.Notification);
+        }
+
+        private static bool TryParsePositiveInt(object rawValue, int defaultValue, string label, out int parsedValue, out string message)
+        {
+            parsedValue = defaultValue;
+            message = string.Empty;
+
+            if (rawValue == null)
+            {
+                return true;
+            }
+
+            if (rawValue is int directValue)
+            {
+                parsedValue = directValue;
+            }
+            else if (rawValue is string rawText)
+            {
+                if (string.IsNullOrWhiteSpace(rawText))
+                {
+                    return true;
+                }
+
+                if (!int.TryParse(rawText, out parsedValue))
+                {
+                    message = $"{label} must be a positive whole number.";
+                    return false;
+                }
+            }
+            else if (!int.TryParse(rawValue.ToString(), out parsedValue))
+            {
+                message = $"{label} must be a positive whole number.";
+                return false;
+            }
+
+            if (parsedValue <= 0)
+            {
+                message = $"{label} must be a positive whole number.";
+                return false;
+            }
+
+            return true;
         }
     }
 }

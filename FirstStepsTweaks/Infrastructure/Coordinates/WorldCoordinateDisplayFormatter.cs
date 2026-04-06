@@ -60,6 +60,17 @@ namespace FirstStepsTweaks.Infrastructure.Coordinates
             return $"{displayPosition.dimension}:{displayPosition.X},{displayPosition.Y},{displayPosition.Z}";
         }
 
+        public string FormatBlockPositionWithoutDimension(BlockPos worldPosition)
+        {
+            BlockPos displayPosition = ToDisplayPosition(worldPosition);
+            if (displayPosition == null)
+            {
+                return string.Empty;
+            }
+
+            return $"{displayPosition.X},{displayPosition.Y},{displayPosition.Z}";
+        }
+
         private static int GetHorizontalOffset(int mapSize)
         {
             return mapSize > 0 ? mapSize / 2 : 0;
