@@ -84,7 +84,7 @@ namespace FirstStepsTweaks.Commands
             api.ChatCommands
                 .Create("fsdebug")
                 .WithDescription("Debug command surface for FirstStepsTweaks data")
-                .RequiresPrivilege(Privilege.controlserver)
+                .RequiresPrivilege(StaffPrivilegeCatalog.AdminPrivilege)
                 .BeginSubCommand("chattypes")
                     .WithDescription("Sends a message for each chat type to test formatting")
                     .RequiresPlayer()

@@ -11,10 +11,10 @@ The current runtime is centered on a small [`FirstStepsTweak.cs`](C:\Users\dayto
 - Join and return messaging
 - Join-time invulnerability handling
 - Donator chat prefixes
-- Discord invite command, Discord chat relay, Discord account linking, and Discord-driven donator privilege sync
+- Discord invite command, Discord chat relay, Discord account linking, and Discord-driven donator role sync
 - Starter and winter kits
 - Gravestones, grave recovery, grave lookup, and grave admin commands
-- Utility commands such as `/whosonline`, `/wind`, `/heal`, `/feed`, and `/fsdebug`
+- Utility commands such as `/whosonline`, `/wind`, `/heal`, `/feed`, `/fsdebug`, and `/fststaff`
 
 ## Tech stack
 
@@ -32,8 +32,8 @@ At startup the mod does the following:
 
 1. Loads `firststepstweaks.json`.
 2. Falls back to the legacy `FirstStepsTweaks.json` name and migrates it to `firststepstweaks.json` when needed.
-3. Applies config upgrades through `JoinConfigUpgrader` and `TeleportConfigUpgrader`.
-4. Builds a shared `FeatureRuntime` with cross-feature services such as player messaging, player lookup, back-location tracking, teleport warmups, land claim access, gravestone services, and Discord link rewards.
+3. Applies config upgrades through the config upgraders, including legacy `AdminPlayerNames` migration into the staff roster.
+4. Builds a shared `FeatureRuntime` with cross-feature services such as player messaging, player lookup, persistent staff assignment syncing, back-location tracking, teleport warmups, land claim access, gravestone services, and Discord link rewards.
 5. Registers privileges used by commands and donor features.
 6. Registers feature modules in this order:
    - `JoinFeature`
@@ -51,6 +51,8 @@ Registered privileges currently include:
 - `firststepstweaks.sponsor`
 - `firststepstweaks.patron`
 - `firststepstweaks.founder`
+- `firststepstweaks.staff.admin`
+- `firststepstweaks.staff.moderator`
 - `firststepstweaks.graveadmin`
 - `firststepstweaks.bypassteleportcooldown`
 
@@ -61,8 +63,8 @@ Registered privileges currently include:
 | Join | `JoinFeature` | Join broadcasts, return messaging, join invulnerability, Discord link reward claim-on-join flow |
 | Teleport | `TeleportFeature` | Back, homes, spawn, storm shelter, stuck escape, warps, RTP, admin TP aliases, and bidirectional TPA |
 | Chat | `ChatFeature` | Donator chat prefix application on player chat |
-| Discord | `DiscordFeature` | Discord relay, `/discord`, `/discordlink`, `/discordunlink`, Discord link polling, avatar enrichment, and donor privilege synchronization |
-| Utility | `UtilityFeature` | Kits, `/whosonline`, `/wind`, `/heal`, `/feed`, and `/fsdebug` |
+| Discord | `DiscordFeature` | Discord relay, `/discord`, `/discordlink`, `/discordunlink`, Discord link polling, avatar enrichment, and donor role synchronization |
+| Utility | `UtilityFeature` | Kits, `/whosonline`, `/wind`, `/heal`, `/feed`, `/fsdebug`, and `/fststaff` |
 | Gravestone | `GravestoneFeature` | `/whereismygrave` plus `/graveadmin` when corpse features are enabled |
 
 ## Command surface
@@ -113,6 +115,16 @@ Registered privileges currently include:
 - `/wind`
 - `/heal`
 - `/feed`
+- `/adminmode`
+- `/fsdebug`
+- `/fststaff list`
+- `/fststaff status <playerOrUid>`
+- `/fststaff set <playerOrUid> <admin|moderator|none>`
+- `/fststaff sync <playerOrUid>`
+
+`/fststaff` is the privilege-only staff manager for FirstStepsTweaks. It persists staff assignments by player UID, reapplies managed privileges on join, and does not change player roles. This allows staff players to keep donor or other externally assigned roles while still receiving admin or moderator privileges from the mod.
+
+`/heal` and `/feed` require moderator access. `/adminmode`, `/fsdebug`, `/tpto`, `/tphere`, `/setspawn`, `/setstormshelter`, `/setwarp`, and `/delwarp` require admin access. `/whosonline` remains public and tags online staff as `[ADMIN]` or `[MOD]`.
 
 ### Gravestones
 
@@ -124,7 +136,7 @@ Registered privileges currently include:
 - `/graveadmin remove <graveId|currentloc>`
 - `/graveadmin teleport <graveId|currentloc>`
 
-`/graveadmin` requires `firststepstweaks.graveadmin` and is only registered when both corpse features and corpse admin commands are enabled.
+`/graveadmin` requires `firststepstweaks.graveadmin` and is only registered when both corpse features and corpse admin commands are enabled. Admin staff sync grants that privilege without changing the player's role.
 
 ### Debug
 
@@ -171,6 +183,7 @@ FirstStepsTweaks/
 |   |-- WhosOnlineCommand.cs
 |   |-- WindCommand.cs
 |   |-- AdminVitalsCommands.cs
+|   |-- StaffCommands.cs
 |   `-- Debug*.cs
 |
 |-- Config/
@@ -304,7 +317,7 @@ Discord-only integration is isolated here:
 - webhook transport
 - message normalization and translation
 - account-link state and polling
-- Discord role lookup and privilege synchronization
+- Discord role lookup and donor role synchronization
 - avatar/profile enrichment
 
 ### `Infrastructure/`
@@ -448,7 +461,7 @@ Join message settings include:
 - `StormThreshold`
 - `StrongWindThreshold`
 - `BreezyThreshold`
-- `AdminPlayerNames`
+  - Staff assignments are now persisted in savegame data and managed through `/fststaff`
 
 ### `Corpse`
 
@@ -475,7 +488,15 @@ Current donor tier precedence is:
 - `Contributor`
 - `Supporter`
 
-The related privileges are:
+The authoritative donor role codes are:
+
+- `supporter`
+- `contributor`
+- `sponsor`
+- `patron`
+- `founder`
+
+Legacy donor privileges remain registered for backward compatibility and migration cleanup:
 
 - `firststepstweaks.supporter`
 - `firststepstweaks.contributor`
@@ -483,7 +504,7 @@ The related privileges are:
 - `firststepstweaks.patron`
 - `firststepstweaks.founder`
 
-`ChatFeature` applies donor prefixes on chat. `DiscordFeature` can also synchronize those donor privileges from Discord roles for linked accounts.
+`ChatFeature` applies donor prefixes on chat by reading the player's current donor role. `DiscordFeature` synchronizes donor roles from Discord roles for linked accounts, while staff access remains privilege-based.
 
 ## Discord integration
 
@@ -500,7 +521,7 @@ The current Discord system is broader than a simple chat webhook.
 - `/discordlink` generates a one-time code for the player.
 - Players complete the link by posting that code in the configured Discord link channel.
 - `DiscordLinkPoller` reads new link-channel messages, resolves codes, and stores the linked Discord account.
-- `/discordunlink` removes the linked account and clears synced donor privileges from that player.
+- `/discordunlink` removes the linked account, clears legacy synced donor privileges from that player, and resets the player to the default role.
 
 ### Reward flow
 
@@ -510,8 +531,8 @@ The current Discord system is broader than a simple chat webhook.
 
 ### Donator sync and avatars
 
-- Linked players can have donor privileges synchronized from Discord guild roles.
-- `PlayerDonatorRoleSyncService` handles role inspection and privilege updates.
+- Linked players can have donor roles synchronized from Discord guild roles.
+- `PlayerDonatorRoleSyncService` handles donor role inspection, donor/default role transitions, and legacy donor-privilege cleanup.
 - `DiscordPlayerAvatarService` and related profile clients provide avatar/profile enrichment for relay behavior where configured.
 
 ## Named homes
@@ -631,7 +652,7 @@ The test project covers the current extracted logic surface rather than only a f
 - `DiscordLinkPollerTests`
 - `DiscordLinkRewardServiceTests`
 - `DiscordLinkRewardJoinHandlerTests`
-- `DiscordDonatorPrivilegePlannerTests`
+- `DiscordDonatorRolePlannerTests`
 - `DiscordRelayConfigurationValidatorTests`
 - `DonatorChatMessageFormatterTests`
 - `DonatorChatPrefixApplicatorTests`

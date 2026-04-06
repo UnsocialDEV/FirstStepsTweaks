@@ -22,14 +22,14 @@ namespace FirstStepsTweaks.Commands
                 .WithDescription("Admin teleport: instantly teleport yourself to another online player")
                 .WithArgs(api.ChatCommands.Parsers.Word("player"))
                 .RequiresPlayer()
-                .RequiresPrivilege(Privilege.controlserver)
+                .RequiresPrivilege(StaffPrivilegeCatalog.AdminPrivilege)
                 .HandleWith(TpTo);
 
             api.ChatCommands.Create("tphere")
                 .WithDescription("Admin teleport: instantly teleport another online player to you")
                 .WithArgs(api.ChatCommands.Parsers.Word("player"))
                 .RequiresPlayer()
-                .RequiresPrivilege(Privilege.controlserver)
+                .RequiresPrivilege(StaffPrivilegeCatalog.AdminPrivilege)
                 .HandleWith(TpHere);
         }
 

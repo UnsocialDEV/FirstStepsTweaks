@@ -17,18 +17,18 @@ public class PlayerTeleportWarmupResolverTests
             DonatorWarmupSeconds = 3
         };
 
-        int result = resolver.Resolve(_ => false, config);
+        int result = resolver.Resolve(roleCode: null, config);
 
         Assert.Equal(10, result);
     }
 
     [Theory]
-    [InlineData("firststepstweaks.supporter")]
-    [InlineData("firststepstweaks.contributor")]
-    [InlineData("firststepstweaks.sponsor")]
-    [InlineData("firststepstweaks.patron")]
-    [InlineData("firststepstweaks.founder")]
-    public void Resolve_UsesDonatorWarmup_ForAnyDonatorTier(string privilege)
+    [InlineData("supporter")]
+    [InlineData("contributor")]
+    [InlineData("sponsor")]
+    [InlineData("patron")]
+    [InlineData("founder")]
+    public void Resolve_UsesDonatorWarmup_ForAnyDonatorTier(string roleCode)
     {
         var config = new TeleportConfig
         {
@@ -36,24 +36,7 @@ public class PlayerTeleportWarmupResolverTests
             DonatorWarmupSeconds = 3
         };
 
-        int result = resolver.Resolve(current => current == privilege, config);
-
-        Assert.Equal(3, result);
-    }
-
-    [Fact]
-    public void Resolve_UsesDonatorWarmup_WhenMultiplePrivilegesMatch()
-    {
-        var config = new TeleportConfig
-        {
-            WarmupSeconds = 10,
-            DonatorWarmupSeconds = 3
-        };
-
-        int result = resolver.Resolve(privilege =>
-            privilege == "firststepstweaks.supporter"
-            || privilege == "firststepstweaks.sponsor"
-            || privilege == "firststepstweaks.founder", config);
+        int result = resolver.Resolve(roleCode, config);
 
         Assert.Equal(3, result);
     }
@@ -67,7 +50,7 @@ public class PlayerTeleportWarmupResolverTests
             DonatorWarmupSeconds = null
         };
 
-        int result = resolver.Resolve(privilege => privilege == "firststepstweaks.supporter", config);
+        int result = resolver.Resolve("supporter", config);
 
         Assert.Equal(TeleportConfig.DefaultDonatorWarmupSeconds, result);
     }

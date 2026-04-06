@@ -1,22 +1,21 @@
 using System;
-using System.Collections.Generic;
 using System.Linq;
-using FirstStepsTweaks.Config;
 using Vintagestory.API.Common;
 using Vintagestory.API.Config;
 using Vintagestory.API.Server;
+using FirstStepsTweaks.Services;
 
 namespace FirstStepsTweaks.Commands
 {
     public sealed class WhosOnlineCommand
     {
         private readonly ICoreServerAPI api;
-        private readonly UtilityConfig utilityConfig;
+        private readonly IStaffStatusReader staffStatusReader;
 
-        public WhosOnlineCommand(ICoreServerAPI api, FirstStepsTweaksConfig config)
+        public WhosOnlineCommand(ICoreServerAPI api, IStaffStatusReader staffStatusReader)
         {
             this.api = api;
-            utilityConfig = config?.Utility ?? new UtilityConfig();
+            this.staffStatusReader = staffStatusReader;
         }
 
         public void Register()
@@ -41,20 +40,18 @@ namespace FirstStepsTweaks.Commands
                 return TextCommandResult.Success();
             }
 
-            var adminNames = new HashSet<string>(utilityConfig.AdminPlayerNames ?? new List<string>(), StringComparer.OrdinalIgnoreCase);
             var sortedPlayers = players
                 .Cast<IServerPlayer>()
-                .OrderByDescending(player => adminNames.Contains(player.PlayerName))
+                .OrderBy(player => GetSortOrder(staffStatusReader.GetLevel(player)))
                 .ThenBy(player => player.PlayerName, StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
             string[] lines = sortedPlayers
                 .Select((player, index) =>
                 {
-                    bool isAdmin = adminNames.Contains(player.PlayerName);
-                    string adminTag = isAdmin ? " [ADMIN]" : string.Empty;
+                    string staffTag = GetStaffTag(staffStatusReader.GetLevel(player));
                     int pingMs = (int)Math.Max(0, Math.Round(player.Ping * 1000d));
-                    return $"{index + 1}. {player.PlayerName}{adminTag} ({pingMs}ms)";
+                    return $"{index + 1}. {player.PlayerName}{staffTag} ({pingMs}ms)";
                 })
                 .ToArray();
 
@@ -63,6 +60,26 @@ namespace FirstStepsTweaks.Commands
             caller.SendMessage(GlobalConstants.InfoLogChatGroup, $"{header}{Environment.NewLine}{playerList}", EnumChatType.CommandSuccess);
             caller.SendMessage(GlobalConstants.GeneralChatGroup, $"{header}{Environment.NewLine}{playerList}", EnumChatType.Notification);
             return TextCommandResult.Success();
+        }
+
+        private static int GetSortOrder(StaffLevel level)
+        {
+            return level switch
+            {
+                StaffLevel.Admin => 0,
+                StaffLevel.Moderator => 1,
+                _ => 2
+            };
+        }
+
+        private static string GetStaffTag(StaffLevel level)
+        {
+            return level switch
+            {
+                StaffLevel.Admin => " [ADMIN]",
+                StaffLevel.Moderator => " [MOD]",
+                _ => string.Empty
+            };
         }
     }
 }

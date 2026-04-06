@@ -1,4 +1,5 @@
 using System;
+using FirstStepsTweaks.Services;
 using Vintagestory.API.Common;
 using Vintagestory.API.Config;
 using Vintagestory.API.Datastructures;
@@ -23,7 +24,7 @@ namespace FirstStepsTweaks.Commands
                 .Create("heal")
                 .WithDescription("Fully heal yourself or another online player")
                 .RequiresPlayer()
-                .RequiresPrivilege(Privilege.controlserver)
+                .RequiresPrivilege(StaffPrivilegeCatalog.ModeratorPrivilege)
                 .WithArgs(api.ChatCommands.Parsers.OptionalWord("player"))
                 .HandleWith(Heal);
 
@@ -31,7 +32,7 @@ namespace FirstStepsTweaks.Commands
                 .Create("feed")
                 .WithDescription("Fully restore satiety for yourself or another online player")
                 .RequiresPlayer()
-                .RequiresPrivilege(Privilege.controlserver)
+                .RequiresPrivilege(StaffPrivilegeCatalog.ModeratorPrivilege)
                 .WithArgs(api.ChatCommands.Parsers.OptionalWord("player"))
                 .HandleWith(Feed);
         }

@@ -1,51 +1,44 @@
 using System;
 using FirstStepsTweaks.Config;
+using FirstStepsTweaks.Infrastructure.Players;
 using Vintagestory.API.Common;
 
 namespace FirstStepsTweaks.Services
 {
     public sealed class PlayerHomeLimitResolver
     {
-        private readonly DonatorPrivilegeCatalog privilegeCatalog;
+        private readonly DonatorTierResolver tierResolver;
 
         public PlayerHomeLimitResolver()
-            : this(new DonatorPrivilegeCatalog())
+            : this(new DonatorTierResolver(new DonatorTierCatalog(), new PlayerRoleCodeReader()))
         {
         }
 
-        public PlayerHomeLimitResolver(DonatorPrivilegeCatalog privilegeCatalog)
+        public PlayerHomeLimitResolver(DonatorTierResolver tierResolver)
         {
-            this.privilegeCatalog = privilegeCatalog;
+            this.tierResolver = tierResolver;
         }
 
         public int Resolve(IPlayer player, TeleportConfig teleportConfig)
         {
             if (player == null)
             {
-                return Resolve(_ => false, teleportConfig);
+                return Resolve(roleCode: null, teleportConfig);
             }
 
-            return Resolve(player.HasPrivilege, teleportConfig);
+            DonatorTier? tier = tierResolver.ResolveTier(player);
+            HomeLimitConfig limits = teleportConfig?.HomeLimits ?? new HomeLimitConfig();
+            return GetTierLimit(tier, limits);
         }
 
-        public int Resolve(System.Func<string, bool> hasPrivilege, TeleportConfig teleportConfig)
+        public int Resolve(string roleCode, TeleportConfig teleportConfig)
         {
             HomeLimitConfig limits = teleportConfig?.HomeLimits ?? new HomeLimitConfig();
-
-            foreach (DonatorPrivilegeDefinition definition in privilegeCatalog.GetAll())
-            {
-                if (!hasPrivilege(definition.Privilege))
-                {
-                    continue;
-                }
-
-                return GetTierLimit(definition.Tier, limits);
-            }
-
-            return Math.Max(1, limits.Default);
+            DonatorTier? tier = tierResolver.ResolveTier(roleCode);
+            return GetTierLimit(tier, limits);
         }
 
-        private static int GetTierLimit(DonatorTier tier, HomeLimitConfig limits)
+        private static int GetTierLimit(DonatorTier? tier, HomeLimitConfig limits)
         {
             return tier switch
             {

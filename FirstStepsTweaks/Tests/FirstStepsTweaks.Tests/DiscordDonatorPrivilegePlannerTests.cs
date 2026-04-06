@@ -4,48 +4,39 @@ using Xunit;
 
 namespace FirstStepsTweaks.Tests;
 
-public sealed class DiscordDonatorPrivilegePlannerTests
+public sealed class DiscordDonatorRolePlannerTests
 {
-    private readonly DiscordDonatorPrivilegePlanner planner = new(new DonatorPrivilegeCatalog());
+    private readonly DiscordDonatorRolePlanner planner = new(new DonatorTierCatalog());
 
     [Fact]
-    public void Plan_WhenDiscordHasNoMatchingRoles_ReturnsNoDonatorPrivileges()
+    public void Plan_WhenDiscordHasNoMatchingRoles_ReturnsNoDonatorRole()
     {
-        DiscordDonatorPrivilegePlan result = planner.Plan(new[] { "villager" });
+        DiscordDonatorRolePlan result = planner.Plan(new[] { "villager" });
 
-        Assert.Empty(result.TargetPrivileges);
+        Assert.Null(result.TargetRoleCode);
     }
 
     [Fact]
-    public void Plan_WhenDiscordHasOneMatchingRole_ReturnsMatchingPrivilege()
+    public void Plan_WhenDiscordHasOneMatchingRole_ReturnsMatchingRoleCode()
     {
-        DiscordDonatorPrivilegePlan result = planner.Plan(new[] { "supporter" });
+        DiscordDonatorRolePlan result = planner.Plan(new[] { "supporter" });
 
-        Assert.Equal(new[] { "firststepstweaks.supporter" }, result.TargetPrivileges);
+        Assert.Equal("supporter", result.TargetRoleCode);
     }
 
     [Fact]
-    public void Plan_WhenDiscordHasMultipleMatchingRoles_ReturnsCumulativePrivilegesForHighestTier()
+    public void Plan_WhenDiscordHasMultipleMatchingRoles_ReturnsHighestTierRoleCode()
     {
-        DiscordDonatorPrivilegePlan result = planner.Plan(new[] { "supporter", "founder" });
+        DiscordDonatorRolePlan result = planner.Plan(new[] { "supporter", "founder" });
 
-        Assert.Equal(
-            new[]
-            {
-                "firststepstweaks.founder",
-                "firststepstweaks.patron",
-                "firststepstweaks.sponsor",
-                "firststepstweaks.contributor",
-                "firststepstweaks.supporter"
-            },
-            result.TargetPrivileges);
+        Assert.Equal("founder", result.TargetRoleCode);
     }
 
     [Fact]
     public void Plan_TreatsDiscordRoleNamesAsCaseInsensitive()
     {
-        DiscordDonatorPrivilegePlan result = planner.Plan(new[] { "FoUnDeR" });
+        DiscordDonatorRolePlan result = planner.Plan(new[] { "FoUnDeR" });
 
-        Assert.Equal("firststepstweaks.founder", result.TargetPrivileges.First());
+        Assert.Equal("founder", result.TargetRoleCode);
     }
 }

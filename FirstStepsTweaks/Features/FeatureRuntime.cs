@@ -18,20 +18,31 @@ namespace FirstStepsTweaks.Features
             CoordinateDisplayFormatter = new WorldCoordinateDisplayFormatter(api);
             Messenger = new PlayerMessenger();
             PlayerLookup = new PlayerLookup(api);
+            var privilegeReader = new PlayerPrivilegeReader();
+            var privilegeMutator = new PlayerPrivilegeMutator(api);
             DelayedPlayerActionScheduler = new DelayedPlayerActionScheduler(api);
             BackLocationStore = new BackLocationStore(CoordinateReader);
             TeleportWarmupService = new TeleportWarmupService(api, Messenger, CoordinateReader);
             LandClaimAccessor = new ReflectionLandClaimAccessor(api);
             PlayerLoadoutManager = new PlayerLoadoutManager(api);
             AdminModeStore = new AdminModeStore();
+            StaffAssignmentStore = new StaffAssignmentStore(api);
+            StaffPrivilegeCatalog = new StaffPrivilegeCatalog();
+            StaffStatusReader = new StaffStatusReader(StaffAssignmentStore);
+            StaffPrivilegeSyncService = new StaffPrivilegeSyncService(
+                StaffAssignmentStore,
+                privilegeReader,
+                privilegeMutator,
+                StaffPrivilegeCatalog);
+            StaffJoinSyncService = new StaffJoinSyncService(StaffAssignmentStore, StaffPrivilegeSyncService);
             AdminModeService = new AdminModeService(
                 api,
                 AdminModeStore,
                 new AdminModePlayerStateController(
                     new PlayerRoleCodeReader(),
                     new PlayerRoleAssigner(api),
-                    new PlayerPrivilegeReader(),
-                    new PlayerPrivilegeMutator(api)),
+                    privilegeReader,
+                    privilegeMutator),
                 new AdminModeLoadoutService(api, PlayerLoadoutManager, CoordinateReader),
                 new AdminModeVitalsService(),
                 Messenger);
@@ -61,6 +72,16 @@ namespace FirstStepsTweaks.Features
         public IPlayerLoadoutManager PlayerLoadoutManager { get; }
 
         public IAdminModeStore AdminModeStore { get; }
+
+        public IStaffAssignmentStore StaffAssignmentStore { get; }
+
+        public StaffPrivilegeCatalog StaffPrivilegeCatalog { get; }
+
+        public IStaffStatusReader StaffStatusReader { get; }
+
+        public StaffPrivilegeSyncService StaffPrivilegeSyncService { get; }
+
+        public StaffJoinSyncService StaffJoinSyncService { get; }
 
         public AdminModeService AdminModeService { get; }
 

@@ -1,11 +1,23 @@
-using System;
+using FirstStepsTweaks.Infrastructure.Players;
 using Vintagestory.API.Common;
 
 namespace FirstStepsTweaks.Services
 {
     public sealed class DonatorTierResolver
     {
-        private readonly DonatorPrivilegeCatalog privilegeCatalog = new DonatorPrivilegeCatalog();
+        private readonly DonatorTierCatalog tierCatalog;
+        private readonly IPlayerRoleCodeReader roleCodeReader;
+
+        public DonatorTierResolver()
+            : this(new DonatorTierCatalog(), new PlayerRoleCodeReader())
+        {
+        }
+
+        public DonatorTierResolver(DonatorTierCatalog tierCatalog, IPlayerRoleCodeReader roleCodeReader)
+        {
+            this.tierCatalog = tierCatalog;
+            this.roleCodeReader = roleCodeReader;
+        }
 
         public string ResolveLabel(IPlayer player)
         {
@@ -14,20 +26,27 @@ namespace FirstStepsTweaks.Services
                 return null;
             }
 
-            return ResolveLabel(player.HasPrivilege);
+            return ResolveLabel(roleCodeReader.Read(player));
         }
 
-        public string ResolveLabel(System.Func<string, bool> hasPrivilege)
+        public string ResolveLabel(string roleCode)
         {
-            foreach (DonatorPrivilegeDefinition definition in privilegeCatalog.GetAll())
+            return tierCatalog.FindByRoleCode(roleCode)?.Label;
+        }
+
+        public DonatorTier? ResolveTier(IPlayer player)
+        {
+            if (player == null)
             {
-                if (hasPrivilege(definition.Privilege))
-                {
-                    return definition.Label;
-                }
+                return null;
             }
 
-            return null;
+            return ResolveTier(roleCodeReader.Read(player));
+        }
+
+        public DonatorTier? ResolveTier(string roleCode)
+        {
+            return tierCatalog.FindByRoleCode(roleCode)?.Tier;
         }
     }
 }

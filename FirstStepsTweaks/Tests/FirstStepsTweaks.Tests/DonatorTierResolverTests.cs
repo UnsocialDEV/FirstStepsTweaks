@@ -8,34 +8,31 @@ public class DonatorTierResolverTests
     private readonly DonatorTierResolver resolver = new();
 
     [Fact]
-    public void ResolveLabel_ReturnsNull_WhenNoPrivilegesMatch()
+    public void ResolveLabel_ReturnsNull_WhenNoRoleMatches()
     {
-        string? result = resolver.ResolveLabel(_ => false);
+        string? result = resolver.ResolveLabel("villager");
 
         Assert.Null(result);
     }
 
     [Theory]
-    [InlineData("firststepstweaks.supporter", "Supporter")]
-    [InlineData("firststepstweaks.contributor", "Contributor")]
-    [InlineData("firststepstweaks.sponsor", "Sponsor")]
-    [InlineData("firststepstweaks.patron", "Patron")]
-    [InlineData("firststepstweaks.founder", "Founder")]
-    public void ResolveLabel_ReturnsExpectedTier_ForSinglePrivilege(string privilege, string expected)
+    [InlineData("supporter", "Supporter")]
+    [InlineData("contributor", "Contributor")]
+    [InlineData("sponsor", "Sponsor")]
+    [InlineData("patron", "Patron")]
+    [InlineData("founder", "Founder")]
+    public void ResolveLabel_ReturnsExpectedTier_ForSingleRole(string roleCode, string expected)
     {
-        string? result = resolver.ResolveLabel(current => current == privilege);
+        string? result = resolver.ResolveLabel(roleCode);
 
         Assert.Equal(expected, result);
     }
 
     [Fact]
-    public void ResolveLabel_ReturnsHighestTier_WhenMultiplePrivilegesMatch()
+    public void ResolveTier_ReturnsExpectedTierForRoleCode()
     {
-        string? result = resolver.ResolveLabel(privilege =>
-            privilege == "firststepstweaks.supporter"
-            || privilege == "firststepstweaks.sponsor"
-            || privilege == "firststepstweaks.founder");
+        DonatorTier? result = resolver.ResolveTier("founder");
 
-        Assert.Equal("Founder", result);
+        Assert.Equal(DonatorTier.Founder, result);
     }
 }

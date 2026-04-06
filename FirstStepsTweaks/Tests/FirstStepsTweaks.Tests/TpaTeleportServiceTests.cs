@@ -49,8 +49,8 @@ public sealed class TpaTeleportServiceTests
         var warmupService = new FakeTeleportWarmupService();
         var teleporter = new FakePlayerTeleporter();
         var service = CreateService(backLocationStore, warmupService, teleporter);
-        var requester = CreatePlayer("requester", "Requester", 1, 2, 3, hasDonatorPrivilege: false);
-        var target = CreatePlayer("target", "Target", 10, 20, 30, hasDonatorPrivilege: true);
+        var requester = CreatePlayer("requester", "Requester", 1, 2, 3, roleCode: "suplayer");
+        var target = CreatePlayer("target", "Target", 10, 20, 30, roleCode: "supporter");
         var request = new TpaRequestRecord
         {
             RequesterUid = "requester",
@@ -93,18 +93,14 @@ public sealed class TpaTeleportServiceTests
             new PlayerTeleportWarmupResolver());
     }
 
-    private static IServerPlayer CreatePlayer(string uid, string name, double x, double y, double z, bool hasDonatorPrivilege = false)
+    private static IServerPlayer CreatePlayer(string uid, string name, double x, double y, double z, string roleCode = "suplayer")
     {
         var player = DispatchProxy.Create<IServerPlayer, ServerPlayerProxy>();
         var proxy = (ServerPlayerProxy)(object)player;
         proxy.PlayerUid = uid;
         proxy.PlayerName = name;
+        proxy.RoleCode = roleCode;
         proxy.Entity = CreateEntity(x, y, z);
-
-        if (hasDonatorPrivilege)
-        {
-            proxy.Privileges.Add("firststepstweaks.supporter");
-        }
 
         return player;
     }
@@ -163,6 +159,8 @@ public sealed class TpaTeleportServiceTests
 
         public string PlayerName { get; set; } = string.Empty;
 
+        public string RoleCode { get; set; } = string.Empty;
+
         public EntityPlayer? Entity { get; set; }
 
         public HashSet<string> Privileges { get; } = new(StringComparer.Ordinal);
@@ -178,6 +176,7 @@ public sealed class TpaTeleportServiceTests
             {
                 "get_PlayerUID" => PlayerUid,
                 "get_PlayerName" => PlayerName,
+                "get_RoleCode" => RoleCode,
                 "get_Entity" => Entity,
                 "HasPrivilege" => Privileges.Contains((string)args![0]!),
                 _ => targetMethod.ReturnType.IsValueType ? Activator.CreateInstance(targetMethod.ReturnType) : null

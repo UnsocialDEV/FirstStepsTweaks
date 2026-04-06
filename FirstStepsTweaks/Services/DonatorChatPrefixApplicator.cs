@@ -1,4 +1,5 @@
 using FirstStepsTweaks.Config;
+using Vintagestory.API.Common;
 
 namespace FirstStepsTweaks.Services
 {
@@ -13,14 +14,14 @@ namespace FirstStepsTweaks.Services
             donatorChatMessageFormatter = new DonatorChatMessageFormatter();
         }
 
-        public string Apply(string message, System.Func<string, bool> hasPrivilege, ChatConfig config)
+        public string Apply(string message, IPlayer player, ChatConfig config)
         {
             if (!config.EnableDonatorPrefixes || string.IsNullOrWhiteSpace(message) || message.StartsWith("/"))
             {
                 return message;
             }
 
-            var tierLabel = donatorTierResolver.ResolveLabel(hasPrivilege);
+            string tierLabel = donatorTierResolver.ResolveLabel(player);
             if (string.IsNullOrWhiteSpace(tierLabel))
             {
                 return message;

@@ -13,6 +13,7 @@ namespace FirstStepsTweaks.Features
         private readonly JoinInvulnerabilityService joinInvulnerabilityService;
         private readonly DiscordLinkRewardJoinHandler discordLinkRewardJoinHandler;
         private readonly AdminModeService adminModeService;
+        private readonly StaffJoinSyncService staffJoinSyncService;
         private readonly LandClaimNotificationService landClaimNotificationService;
 
         public JoinFeature(ICoreServerAPI api, FirstStepsTweaksConfig config, FeatureRuntime runtime)
@@ -25,6 +26,7 @@ namespace FirstStepsTweaks.Features
                 new DelayedPlayerActionScheduler(api),
                 runtime.Messenger);
             adminModeService = runtime.AdminModeService;
+            staffJoinSyncService = runtime.StaffJoinSyncService;
 
             if (config.Features.EnableLandClaimNotifications)
             {
@@ -38,6 +40,7 @@ namespace FirstStepsTweaks.Features
             api.Event.PlayerNowPlaying += joinInvulnerabilityService.OnPlayerNowPlaying;
             api.Event.PlayerNowPlaying += joinService.OnPlayerNowPlaying;
             api.Event.PlayerNowPlaying += discordLinkRewardJoinHandler.OnPlayerNowPlaying;
+            api.Event.PlayerNowPlaying += staffJoinSyncService.OnPlayerNowPlaying;
             api.Event.PlayerNowPlaying += adminModeService.OnPlayerNowPlaying;
             api.Event.PlayerLeave += joinInvulnerabilityService.OnPlayerLeave;
             api.Event.PlayerLeave += joinService.OnPlayerLeave;

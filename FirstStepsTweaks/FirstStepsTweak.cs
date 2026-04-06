@@ -50,33 +50,36 @@ namespace FirstStepsTweaks
         private FirstStepsTweaksConfig LoadConfig(ICoreServerAPI api)
         {
             var config = api.LoadModConfig<FirstStepsTweaksConfig>(ConfigFileName);
+            var legacyConfig = api.LoadModConfig<LegacyFirstStepsTweaksConfig>(ConfigFileName);
             if (config != null)
             {
-                return ApplyConfigUpgrades(api, config);
+                return ApplyConfigUpgrades(api, config, legacyConfig);
             }
 
             config = api.LoadModConfig<FirstStepsTweaksConfig>(LegacyConfigFileName);
+            legacyConfig = api.LoadModConfig<LegacyFirstStepsTweaksConfig>(LegacyConfigFileName);
             if (config != null)
             {
                 api.StoreModConfig(config, ConfigFileName);
                 api.Logger.Notification($"[FirstStepsTweaks] Migrated config file '{LegacyConfigFileName}' to '{ConfigFileName}' for cross-platform compatibility.");
-                return ApplyConfigUpgrades(api, config);
+                return ApplyConfigUpgrades(api, config, legacyConfig);
             }
 
             config = new FirstStepsTweaksConfig();
-            config = ApplyConfigUpgrades(api, config);
+            config = ApplyConfigUpgrades(api, config, null);
             api.StoreModConfig(config, ConfigFileName);
             api.Logger.Warning($"[FirstStepsTweaks] Created config file {ConfigFileName}. Review and adjust as needed.");
             return config;
         }
 
-        private FirstStepsTweaksConfig ApplyConfigUpgrades(ICoreServerAPI api, FirstStepsTweaksConfig config)
+        private FirstStepsTweaksConfig ApplyConfigUpgrades(ICoreServerAPI api, FirstStepsTweaksConfig config, LegacyFirstStepsTweaksConfig? legacyConfig)
         {
             bool changed = false;
             var agentBridgeConfigUpgrader = new AgentBridgeConfigUpgrader();
             var joinConfigUpgrader = new JoinConfigUpgrader();
             var teleportConfigUpgrader = new TeleportConfigUpgrader();
             var rtpConfigUpgrader = new RtpConfigUpgrader();
+            var staffConfigUpgrader = new StaffConfigUpgrader(new StaffAssignmentStore(api));
 
             if (agentBridgeConfigUpgrader.TryUpgradeLegacyLoopbackPort(config))
             {
@@ -94,6 +97,11 @@ namespace FirstStepsTweaks
             }
 
             if (rtpConfigUpgrader.TryUpgradeLegacyDefaults(config))
+            {
+                changed = true;
+            }
+
+            if (staffConfigUpgrader.TryUpgradeLegacyAdminPlayerNames(legacyConfig?.Utility?.AdminPlayerNames))
             {
                 changed = true;
             }
@@ -150,6 +158,16 @@ namespace FirstStepsTweaks
                 "firststepstweaks.graveadmin",
                 "Allows the player to use admin commands for managing gravestones, such as listing, removing, and giving grave items.",
                 true
+            );
+            api.Permissions.RegisterPrivilege(
+                StaffPrivilegeCatalog.AdminPrivilege,
+                "Allows access to FirstStepsTweaks admin staff commands and managed admin privileges.",
+                false
+            );
+            api.Permissions.RegisterPrivilege(
+                StaffPrivilegeCatalog.ModeratorPrivilege,
+                "Allows access to FirstStepsTweaks moderator staff commands and managed moderator privileges.",
+                false
             );
             api.Permissions.RegisterPrivilege(
                 TeleportBypass.Privilege,

@@ -1,43 +1,46 @@
 using FirstStepsTweaks.Config;
+using FirstStepsTweaks.Infrastructure.Players;
 using Vintagestory.API.Common;
 
 namespace FirstStepsTweaks.Services
 {
     public sealed class PlayerTeleportWarmupResolver
     {
-        private readonly DonatorPrivilegeCatalog privilegeCatalog;
+        private readonly DonatorTierResolver tierResolver;
 
         public PlayerTeleportWarmupResolver()
-            : this(new DonatorPrivilegeCatalog())
+            : this(new DonatorTierResolver(new DonatorTierCatalog(), new PlayerRoleCodeReader()))
         {
         }
 
-        public PlayerTeleportWarmupResolver(DonatorPrivilegeCatalog privilegeCatalog)
+        public PlayerTeleportWarmupResolver(DonatorTierResolver tierResolver)
         {
-            this.privilegeCatalog = privilegeCatalog;
+            this.tierResolver = tierResolver;
         }
 
         public int Resolve(IPlayer player, TeleportConfig teleportConfig)
         {
             if (player == null)
             {
-                return Resolve(_ => false, teleportConfig);
+                return Resolve(roleCode: null, teleportConfig);
             }
 
-            return Resolve(player.HasPrivilege, teleportConfig);
+            return Resolve(tierResolver.ResolveTier(player), teleportConfig);
         }
 
-        public int Resolve(System.Func<string, bool> hasPrivilege, TeleportConfig teleportConfig)
+        public int Resolve(string roleCode, TeleportConfig teleportConfig)
+        {
+            return Resolve(tierResolver.ResolveTier(roleCode), teleportConfig);
+        }
+
+        private static int Resolve(DonatorTier? tier, TeleportConfig teleportConfig)
         {
             int defaultWarmupSeconds = System.Math.Max(0, teleportConfig?.WarmupSeconds ?? 0);
             int donatorWarmupSeconds = System.Math.Max(0, teleportConfig?.DonatorWarmupSeconds ?? TeleportConfig.DefaultDonatorWarmupSeconds);
 
-            foreach (DonatorPrivilegeDefinition definition in privilegeCatalog.GetAll())
+            if (tier.HasValue)
             {
-                if (hasPrivilege(definition.Privilege))
-                {
-                    return donatorWarmupSeconds;
-                }
+                return donatorWarmupSeconds;
             }
 
             return defaultWarmupSeconds;

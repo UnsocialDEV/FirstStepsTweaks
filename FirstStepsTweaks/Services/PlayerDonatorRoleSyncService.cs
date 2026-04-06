@@ -1,10 +1,7 @@
 using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Threading.Tasks;
 using FirstStepsTweaks.Discord;
 using FirstStepsTweaks.Infrastructure.Messaging;
-using FirstStepsTweaks.Infrastructure.Players;
 using Vintagestory.API.Common;
 using Vintagestory.API.Config;
 using Vintagestory.API.Server;
@@ -18,10 +15,10 @@ namespace FirstStepsTweaks.Services
         private readonly IDiscordLinkedAccountStore linkedAccountStore;
         private readonly IDiscordMemberRoleClient memberRoleClient;
         private readonly DiscordRoleNameResolver roleNameResolver;
-        private readonly DiscordDonatorPrivilegePlanner planner;
-        private readonly IPlayerPrivilegeReader privilegeReader;
-        private readonly IPlayerPrivilegeMutator privilegeMutator;
-        private readonly DonatorPrivilegeCatalog privilegeCatalog;
+        private readonly DiscordDonatorRolePlanner planner;
+        private readonly DonatorRoleTransitionApplier roleTransitionApplier;
+        private readonly LegacyDonatorPrivilegeCleaner legacyPrivilegeCleaner;
+        private readonly AdminModePriorRoleUpdater adminModePriorRoleUpdater;
         private readonly IPlayerMessenger messenger;
 
         public PlayerDonatorRoleSyncService(
@@ -30,10 +27,10 @@ namespace FirstStepsTweaks.Services
             IDiscordLinkedAccountStore linkedAccountStore,
             IDiscordMemberRoleClient memberRoleClient,
             DiscordRoleNameResolver roleNameResolver,
-            DiscordDonatorPrivilegePlanner planner,
-            IPlayerPrivilegeReader privilegeReader,
-            IPlayerPrivilegeMutator privilegeMutator,
-            DonatorPrivilegeCatalog privilegeCatalog,
+            DiscordDonatorRolePlanner planner,
+            DonatorRoleTransitionApplier roleTransitionApplier,
+            LegacyDonatorPrivilegeCleaner legacyPrivilegeCleaner,
+            AdminModePriorRoleUpdater adminModePriorRoleUpdater,
             IPlayerMessenger messenger)
         {
             this.api = api;
@@ -42,9 +39,9 @@ namespace FirstStepsTweaks.Services
             this.memberRoleClient = memberRoleClient;
             this.roleNameResolver = roleNameResolver;
             this.planner = planner;
-            this.privilegeReader = privilegeReader;
-            this.privilegeMutator = privilegeMutator;
-            this.privilegeCatalog = privilegeCatalog;
+            this.roleTransitionApplier = roleTransitionApplier;
+            this.legacyPrivilegeCleaner = legacyPrivilegeCleaner;
+            this.adminModePriorRoleUpdater = adminModePriorRoleUpdater;
             this.messenger = messenger;
         }
 
@@ -74,7 +71,7 @@ namespace FirstStepsTweaks.Services
             }
 
             DiscordMemberRoles memberRoles = await memberRoleClient.GetMemberRolesAsync(config, discordUserId);
-            DiscordDonatorPrivilegePlan plan = planner.Plan(
+            DiscordDonatorRolePlan plan = planner.Plan(
                 roleNameResolver.ResolveRoleNames(memberRoles.MemberRoleIds, memberRoles.GuildRoles));
 
             ApplyPlan(player, plan);
@@ -87,16 +84,18 @@ namespace FirstStepsTweaks.Services
                 return;
             }
 
-            IReadOnlyCollection<string> currentPrivileges = GetCurrentManagedPrivileges(player);
-            if (currentPrivileges.Count == 0)
+            DonatorRoleTransitionResult transition = roleTransitionApplier.Apply(player, targetRoleCode: null);
+            if (!transition.Succeeded)
             {
                 return;
             }
 
-            foreach (string privilege in currentPrivileges)
+            if (transition.Changed)
             {
-                privilegeMutator.Revoke(player, privilege);
+                adminModePriorRoleUpdater.UpdateIfActive(player, transition.EffectiveRoleCode);
             }
+
+            legacyPrivilegeCleaner.ClearManagedPrivileges(player);
         }
 
         private bool IsConfiguredForRoleSync()
@@ -107,51 +106,27 @@ namespace FirstStepsTweaks.Services
                 && !string.IsNullOrWhiteSpace(config.GuildId);
         }
 
-        private void ApplyPlan(IServerPlayer player, DiscordDonatorPrivilegePlan plan)
+        private void ApplyPlan(IServerPlayer player, DiscordDonatorRolePlan plan)
         {
-            HashSet<string> currentPrivileges = new HashSet<string>(GetCurrentManagedPrivileges(player), StringComparer.OrdinalIgnoreCase);
-            HashSet<string> targetPrivileges = new HashSet<string>(plan.TargetPrivileges ?? Array.Empty<string>(), StringComparer.OrdinalIgnoreCase);
-            bool changed = false;
-
-            foreach (string privilege in currentPrivileges)
-            {
-                if (targetPrivileges.Contains(privilege))
-                {
-                    continue;
-                }
-
-                privilegeMutator.Revoke(player, privilege);
-                changed = true;
-            }
-
-            foreach (string privilege in targetPrivileges)
-            {
-                if (currentPrivileges.Contains(privilege))
-                {
-                    continue;
-                }
-
-                privilegeMutator.Grant(player, privilege);
-                changed = true;
-            }
-
-            if (!changed)
+            DonatorRoleTransitionResult transition = roleTransitionApplier.Apply(player, plan?.TargetRoleCode);
+            if (!transition.Succeeded)
             {
                 return;
             }
 
-            messenger.SendInfo(
-                player,
-                "Discord donator role synced.",
-                GlobalConstants.InfoLogChatGroup,
-                (int)EnumChatType.Notification);
-        }
+            if (transition.Changed)
+            {
+                adminModePriorRoleUpdater.UpdateIfActive(player, transition.EffectiveRoleCode);
+            }
 
-        private IReadOnlyCollection<string> GetCurrentManagedPrivileges(IServerPlayer player)
-        {
-            return privilegeCatalog.GetAllPrivileges()
-                .Where(privilege => privilegeReader.HasPrivilege(player, privilege))
-                .ToArray();
+            bool cleanedLegacyPrivileges = legacyPrivilegeCleaner.ClearManagedPrivileges(player);
+
+            if (!transition.Changed && !cleanedLegacyPrivileges)
+            {
+                return;
+            }
+
+            messenger.SendInfo(player, "Discord donator role synced.", GlobalConstants.InfoLogChatGroup, (int)EnumChatType.Notification);
         }
     }
 }

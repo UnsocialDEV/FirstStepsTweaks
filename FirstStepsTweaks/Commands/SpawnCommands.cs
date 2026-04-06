@@ -44,7 +44,7 @@ namespace FirstStepsTweaks.Commands
                 .Create("setspawn")
                 .WithDescription("Sets server spawn to your current location")
                 .RequiresPlayer()
-                .RequiresPrivilege(Privilege.controlserver)
+                .RequiresPrivilege(StaffPrivilegeCatalog.AdminPrivilege)
                 .HandleWith(SetSpawn);
 
             api.ChatCommands

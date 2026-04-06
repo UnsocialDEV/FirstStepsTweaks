@@ -31,7 +31,7 @@ namespace FirstStepsTweaks.Commands
                 .Create("setstormshelter")
                 .WithDescription("Sets the storm shelter to your current location")
                 .RequiresPlayer()
-                .RequiresPrivilege(Privilege.controlserver)
+                .RequiresPrivilege(StaffPrivilegeCatalog.AdminPrivilege)
                 .HandleWith(SetStormShelter);
 
             api.ChatCommands

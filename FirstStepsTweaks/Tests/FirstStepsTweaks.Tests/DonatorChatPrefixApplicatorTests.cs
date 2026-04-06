@@ -1,5 +1,7 @@
 using FirstStepsTweaks.Config;
 using FirstStepsTweaks.Services;
+using System.Reflection;
+using Vintagestory.API.Common;
 using Xunit;
 
 namespace FirstStepsTweaks.Tests;
@@ -13,7 +15,7 @@ public class DonatorChatPrefixApplicatorTests
     {
         var config = new ChatConfig();
 
-        string result = applicator.Apply("Ava: hello", _ => false, config);
+        string result = applicator.Apply("Ava: hello", CreatePlayer("villager"), config);
 
         Assert.Equal("Ava: hello", result);
     }
@@ -23,18 +25,47 @@ public class DonatorChatPrefixApplicatorTests
     {
         var config = new ChatConfig();
 
-        string result = applicator.Apply("/home", _ => true, config);
+        string result = applicator.Apply("/home", CreatePlayer("founder"), config);
 
         Assert.Equal("/home", result);
     }
 
     [Fact]
-    public void Apply_PrependsHighestTierPrefix_WhenPrivilegeMatches()
+    public void Apply_PrependsTierPrefix_WhenRoleMatches()
     {
         var config = new ChatConfig();
 
-        string result = applicator.Apply("Ava: hello", privilege => privilege == "firststepstweaks.patron", config);
+        string result = applicator.Apply("Ava: hello", CreatePlayer("patron"), config);
 
         Assert.Equal("•P Ava: hello", result);
+    }
+
+    private static IPlayer CreatePlayer(string roleCode)
+    {
+        IPlayer player = DispatchProxy.Create<IPlayer, TestPlayerProxy>();
+        ((TestPlayerProxy)(object)player).RoleCode = roleCode;
+        return player;
+    }
+
+    private class TestPlayerProxy : DispatchProxy
+    {
+        public string RoleCode { get; set; } = string.Empty;
+
+        protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
+        {
+            if (targetMethod?.Name == "get_RoleCode")
+            {
+                return RoleCode;
+            }
+
+            if (targetMethod?.ReturnType == typeof(void))
+            {
+                return null;
+            }
+
+            return targetMethod?.ReturnType.IsValueType == true
+                ? Activator.CreateInstance(targetMethod.ReturnType)
+                : null;
+        }
     }
 }

@@ -62,7 +62,7 @@ namespace FirstStepsTweaks.Commands
                 .Create("setwarp")
                 .WithDescription("Set a named warp at your current location")
                 .RequiresPlayer()
-                .RequiresPrivilege(Privilege.controlserver)
+                .RequiresPrivilege(StaffPrivilegeCatalog.AdminPrivilege)
                 .WithArgs(api.ChatCommands.Parsers.Word("name"))
                 .HandleWith(SetWarp);
 
@@ -70,7 +70,7 @@ namespace FirstStepsTweaks.Commands
                 .Create("delwarp")
                 .WithDescription("Delete a named warp")
                 .RequiresPlayer()
-                .RequiresPrivilege(Privilege.controlserver)
+                .RequiresPrivilege(StaffPrivilegeCatalog.AdminPrivilege)
                 .WithArgs(api.ChatCommands.Parsers.Word("name"))
                 .HandleWith(DelWarp);
 

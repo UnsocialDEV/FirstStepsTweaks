@@ -20,33 +20,9 @@ public class PlayerHomeLimitResolverTests
             }
         };
 
-        int result = resolver.Resolve(_ => false, config);
+        int result = resolver.Resolve(roleCode: null, config);
 
         Assert.Equal(2, result);
-    }
-
-    [Fact]
-    public void Resolve_UsesHighestTier_WhenMultiplePrivilegesMatch()
-    {
-        var config = new TeleportConfig
-        {
-            HomeLimits = new HomeLimitConfig
-            {
-                Default = 1,
-                Supporter = 2,
-                Contributor = 3,
-                Sponsor = 4,
-                Patron = 5,
-                Founder = 6
-            }
-        };
-
-        int result = resolver.Resolve(privilege =>
-            privilege == "firststepstweaks.supporter"
-            || privilege == "firststepstweaks.sponsor"
-            || privilege == "firststepstweaks.founder", config);
-
-        Assert.Equal(6, result);
     }
 
     [Fact]
@@ -62,8 +38,25 @@ public class PlayerHomeLimitResolverTests
             }
         };
 
-        int result = resolver.Resolve(privilege => privilege == "firststepstweaks.contributor", config);
+        int result = resolver.Resolve("contributor", config);
 
         Assert.Equal(7, result);
+    }
+
+    [Fact]
+    public void Resolve_UsesFounderLimit_WhenFounderRoleAssigned()
+    {
+        var config = new TeleportConfig
+        {
+            HomeLimits = new HomeLimitConfig
+            {
+                Default = 1,
+                Founder = 6
+            }
+        };
+
+        int result = resolver.Resolve("founder", config);
+
+        Assert.Equal(6, result);
     }
 }

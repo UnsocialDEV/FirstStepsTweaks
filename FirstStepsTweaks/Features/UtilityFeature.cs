@@ -65,7 +65,8 @@ namespace FirstStepsTweaks.Features
 
             if (config.Features.EnableUtilityCommands)
             {
-                new WhosOnlineCommand(api, config).Register();
+                new StaffCommands(api, runtime.StaffAssignmentStore, runtime.StaffStatusReader, runtime.StaffPrivilegeSyncService, runtime.PlayerLookup).Register();
+                new WhosOnlineCommand(api, runtime.StaffStatusReader).Register();
                 new WindCommand(api, config, runtime.CoordinateReader).Register();
                 new AdminVitalsCommands(api).Register();
                 new AdminModeCommand(api, runtime.AdminModeService).Register();

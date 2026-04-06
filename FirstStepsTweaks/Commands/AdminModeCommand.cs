@@ -21,7 +21,7 @@ namespace FirstStepsTweaks.Commands
                 .Create("adminmode")
                 .WithDescription("Toggle a persisted creative admin mode that swaps between survival and admin loadouts")
                 .RequiresPlayer()
-                .RequiresPrivilege(Privilege.controlserver)
+                .RequiresPrivilege(StaffPrivilegeCatalog.AdminPrivilege)
                 .HandleWith(Toggle);
         }
 

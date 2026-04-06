@@ -35,7 +35,7 @@ namespace FirstStepsTweaks.Features
                 return;
             }
 
-            message = donatorChatPrefixApplicator.Apply(message, player.HasPrivilege, config.Chat);
+            message = donatorChatPrefixApplicator.Apply(message, player, config.Chat);
         }
     }
 }

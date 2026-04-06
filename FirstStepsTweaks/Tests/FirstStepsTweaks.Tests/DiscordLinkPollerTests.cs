@@ -395,7 +395,7 @@ public sealed class DiscordLinkPollerTests
             new DiscordLinkCodeMessageParser(),
             playerLookup,
             new PlayerDonatorRoleSyncService(
-                null!,
+                api!,
                 new DiscordBridgeConfig
                 {
                     EnableRoleSync = true,
@@ -405,10 +405,17 @@ public sealed class DiscordLinkPollerTests
                 linkedAccountStore,
                 memberRoleClient,
                 new DiscordRoleNameResolver(),
-                new DiscordDonatorPrivilegePlanner(new DonatorPrivilegeCatalog()),
-                new FakePlayerPrivilegeReader(),
-                new FakePlayerPrivilegeMutator(),
-                new DonatorPrivilegeCatalog(),
+                new DiscordDonatorRolePlanner(new DonatorTierCatalog()),
+                new DonatorRoleTransitionApplier(
+                    api!,
+                    new PlayerRoleCodeReader(),
+                    new FakePlayerRoleAssigner(),
+                    new FakePlayerDefaultRoleResetter()),
+                new LegacyDonatorPrivilegeCleaner(
+                    new FakePlayerPrivilegeReader(),
+                    new FakePlayerPrivilegeMutator(),
+                    new DonatorTierCatalog()),
+                new AdminModePriorRoleUpdater(api!, new FakeAdminModeStore()),
                 messenger),
             messenger,
             statusTracker,
@@ -657,6 +664,50 @@ public sealed class DiscordLinkPollerTests
         }
     }
 
+    private sealed class FakePlayerRoleAssigner : IPlayerRoleAssigner
+    {
+        public void Assign(IServerPlayer player, string roleCode)
+        {
+            ((TestServerPlayerProxy)(object)player).RoleCode = roleCode;
+        }
+    }
+
+    private sealed class FakePlayerDefaultRoleResetter : IPlayerDefaultRoleResetter
+    {
+        public void Reset(IServerPlayer player)
+        {
+            ((TestServerPlayerProxy)(object)player).RoleCode = GetDefaultRoleCode();
+        }
+
+        public string GetDefaultRoleCode()
+        {
+            return "suplayer";
+        }
+    }
+
+    private sealed class FakeAdminModeStore : IAdminModeStore
+    {
+        public bool IsActive(IServerPlayer player)
+        {
+            return false;
+        }
+
+        public bool TryLoad(IServerPlayer player, out AdminModeState state, out string errorMessage)
+        {
+            state = null!;
+            errorMessage = string.Empty;
+            return false;
+        }
+
+        public void Save(IServerPlayer player, AdminModeState state)
+        {
+        }
+
+        public void Clear(IServerPlayer player)
+        {
+        }
+    }
+
     private sealed class FakePlayerMessenger : IPlayerMessenger
     {
         public string? LastDualMessage { get; private set; }
@@ -748,6 +799,7 @@ public sealed class DiscordLinkPollerTests
         var proxy = DispatchProxy.Create<IServerPlayer, TestServerPlayerProxy>();
         ((TestServerPlayerProxy)(object)proxy).Values["get_PlayerUID"] = playerUid;
         ((TestServerPlayerProxy)(object)proxy).Values["get_PlayerName"] = playerName;
+        ((TestServerPlayerProxy)(object)proxy).Values["get_RoleCode"] = "suplayer";
         return proxy;
     }
 
@@ -777,6 +829,12 @@ public sealed class DiscordLinkPollerTests
     private class TestServerPlayerProxy : DispatchProxy
     {
         public Dictionary<string, object> Values { get; } = new(StringComparer.Ordinal);
+
+        public string RoleCode
+        {
+            get => Values.TryGetValue("get_RoleCode", out object? value) ? value?.ToString() ?? string.Empty : string.Empty;
+            set => Values["get_RoleCode"] = value;
+        }
 
         protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
         {
