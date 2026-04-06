@@ -17,12 +17,18 @@ namespace FirstStepsTweaks.Commands
 
         public void Register()
         {
+            RegisterCommand("adminmode");
+        }
+
+        private void RegisterCommand(string commandName)
+        {
             api.ChatCommands
-                .Create("adminmode")
+                .Create(commandName)
                 .WithDescription("Toggle a persisted creative admin mode that swaps between survival and admin loadouts")
                 .RequiresPlayer()
                 .RequiresPrivilege(StaffPrivilegeCatalog.AdminPrivilege)
-                .HandleWith(Toggle);
+                .HandleWith(Toggle)
+                .WithAlias("am");
         }
 
         private TextCommandResult Toggle(TextCommandCallingArgs args)

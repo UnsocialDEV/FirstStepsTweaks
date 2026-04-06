@@ -14,7 +14,7 @@ The current runtime is centered on a small [`FirstStepsTweak.cs`](C:\Users\dayto
 - Discord invite command, Discord chat relay, Discord account linking, and Discord-driven donator role sync
 - Starter and winter kits
 - Gravestones, grave recovery, grave lookup, and grave admin commands
-- Utility commands such as `/whosonline`, `/wind`, `/heal`, `/feed`, `/fsdebug`, and `/fststaff`
+- Utility commands such as `/whosonline`, `/wind`, `/heal`, `/feed`, `/fstdebug`, and `/fststaff`
 
 ## Tech stack
 
@@ -64,7 +64,7 @@ Registered privileges currently include:
 | Teleport | `TeleportFeature` | Back, homes, spawn, storm shelter, stuck escape, warps, RTP, admin TP aliases, and bidirectional TPA |
 | Chat | `ChatFeature` | Donator chat prefix application on player chat |
 | Discord | `DiscordFeature` | Discord relay, `/discord`, `/discordlink`, `/discordunlink`, Discord link polling, avatar enrichment, and donor role synchronization |
-| Utility | `UtilityFeature` | Kits, `/whosonline`, `/wind`, `/heal`, `/feed`, `/fsdebug`, and `/fststaff` |
+| Utility | `UtilityFeature` | Kits, `/whosonline`, `/wind`, `/heal`, `/feed`, `/fstdebug`, and `/fststaff` |
 | Gravestone | `GravestoneFeature` | `/whereismygrave` plus `/graveadmin` when corpse features are enabled |
 
 ## Command surface
@@ -116,7 +116,8 @@ Registered privileges currently include:
 - `/heal`
 - `/feed`
 - `/adminmode`
-- `/fsdebug`
+- `/am`
+- `/fstdebug`
 - `/fststaff list`
 - `/fststaff status <playerOrUid>`
 - `/fststaff set <playerOrUid> <admin|moderator|none>`
@@ -124,7 +125,7 @@ Registered privileges currently include:
 
 `/fststaff` is the privilege-only staff manager for FirstStepsTweaks. It persists staff assignments by player UID, reapplies managed privileges on join, and does not change player roles. This allows staff players to keep donor or other externally assigned roles while still receiving admin or moderator privileges from the mod.
 
-`/heal` and `/feed` require moderator access. `/adminmode`, `/fsdebug`, `/tpto`, `/tphere`, `/setspawn`, `/setstormshelter`, `/setwarp`, and `/delwarp` require admin access. `/whosonline` remains public and tags online staff as `[ADMIN]` or `[MOD]`.
+`/heal` and `/feed` require moderator access. `/adminmode`, `/am`, `/fstdebug`, `/tpto`, `/tphere`, `/setspawn`, `/setstormshelter`, `/setwarp`, and `/delwarp` require admin access. `/whosonline` remains public and tags online staff as `[ADMIN]` or `[MOD]`.
 
 ### Gravestones
 
@@ -140,7 +141,7 @@ Registered privileges currently include:
 
 ### Debug
 
-`/fsdebug` is an admin-only debug surface for stored state inspection and repair. Current subcommand areas include:
+`/fstdebug` is an admin-only debug surface for stored state inspection and repair. Current subcommand areas include:
 
 - `chattypes`
 - `player`

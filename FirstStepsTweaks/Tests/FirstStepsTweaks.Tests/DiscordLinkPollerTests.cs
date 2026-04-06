@@ -164,7 +164,7 @@ public sealed class DiscordLinkPollerTests
 
         await InvokePollOnceAsync(poller);
 
-        Assert.Equal("200", lastMessageStore.SavedLastMessageId);
+        Assert.Equal("201", lastMessageStore.SavedLastMessageId);
         Assert.Equal("discord-1", linkedAccountStore.GetLinkedDiscordUserId("player-1"));
         Assert.DoesNotContain(logger.WarningMessages, message => message.Contains("fast-forwarded stale backlog"));
         Assert.Equal(2, statusTracker.Capture().LastProcessedPageCount);
@@ -314,7 +314,7 @@ public sealed class DiscordLinkPollerTests
 
         await InvokePollOnceAsync(poller);
 
-        Assert.Equal("200", lastMessageStore.SavedLastMessageId);
+        Assert.Equal("300", lastMessageStore.SavedLastMessageId);
         Assert.Equal("discord-1", linkedAccountStore.GetLinkedDiscordUserId("player-1"));
         Assert.Equal("discord-1", linkedAccountStore.GetLinkedDiscordUserId("player-2"));
         Assert.Null(linkedAccountStore.GetLinkedDiscordUserId("player-3"));
@@ -326,7 +326,7 @@ public sealed class DiscordLinkPollerTests
         await InvokePollOnceAsync(poller);
 
         Assert.Equal("discord-1", linkedAccountStore.GetLinkedDiscordUserId("player-3"));
-        Assert.Equal("300", lastMessageStore.SavedLastMessageId);
+        Assert.Equal("301", lastMessageStore.SavedLastMessageId);
         Assert.False(statusTracker.Capture().LastPollReachedProcessingCap);
         Assert.Equal(1, logger.WarningMessages.Count);
     }

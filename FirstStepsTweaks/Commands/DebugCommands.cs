@@ -82,7 +82,7 @@ namespace FirstStepsTweaks.Commands
         public void Register()
         {
             api.ChatCommands
-                .Create("fsdebug")
+                .Create("fstdebug")
                 .WithDescription("Debug command surface for FirstStepsTweaks data")
                 .RequiresPrivilege(StaffPrivilegeCatalog.AdminPrivilege)
                 .BeginSubCommand("chattypes")
